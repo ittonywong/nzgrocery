@@ -1,0 +1,92 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1b5e20"><meta name="description" content="Auckland supermarket price comparison (personal, unofficial). Prices from Baskt — not official supermarket prices.">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icons/icon-192.png"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">
+<title>紐西蘭超市格價</title>
+<style>
+:root{--g:#1b5e20;--g2:#2e7d32;--bg:#f3f5f3;--tx:#1a1a1a;--mut:#4a4a4a;--warn:#7a3e00;--line:#d5dbd5}
+*{box-sizing:border-box}html{font-size:100%}body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans CJK TC","Noto Sans TC","PingFang HK",sans-serif;background:var(--bg);color:var(--tx);line-height:1.45;overflow-wrap:anywhere}
+a{color:#0b5394}button,select,input{font:inherit;color:inherit}
+button,select,.btn{min-height:44px;min-width:44px;border-radius:10px}
+header{background:var(--g);color:#fff;padding:.6rem .75rem calc(.6rem);position:relative}
+.hd{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;justify-content:space-between}
+h1{margin:0;font-size:1.25rem;line-height:1.25}h1 small{display:block;font-size:.8rem;font-weight:normal;opacity:.95}
+.tools{display:flex;gap:.35rem;align-items:center;flex-wrap:wrap}
+#lang{background:#fff;color:var(--g);border:0;padding:0 .5rem;font-size:.95rem;max-width:11rem}
+.fs{background:#fff;color:var(--g);border:0;font-weight:bold;padding:0 .4rem}
+.note{background:#fff8e1;border-bottom:1px solid #e0c97a;padding:.5rem .75rem;font-size:.9rem}
+.note b{color:var(--warn)}
+nav.tabs{display:flex;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+nav.tabs button{flex:1;border:0;background:#fff;border-bottom:3px solid transparent;border-radius:0;padding:.4rem .2rem;font-size:1rem}
+nav.tabs button[aria-selected=true]{border-bottom-color:var(--g);color:var(--g);font-weight:bold}
+main{max-width:56rem;margin:0 auto;padding:.5rem}
+.panel{background:#fff;border-radius:12px;padding:.75rem;margin:.5rem 0;border:1px solid var(--line)}
+.row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+.pri{background:var(--g);color:#fff;border:0;padding:0 1rem;font-weight:bold}
+.sec{background:#fff;border:1px solid var(--g);color:var(--g);padding:0 .8rem}
+.seg{display:inline-flex;border:1px solid var(--g);border-radius:10px;overflow:hidden}
+.seg button{border:0;border-radius:0;background:#fff;color:var(--g);padding:0 .9rem}.seg button[aria-pressed=true]{background:var(--g);color:#fff;font-weight:bold}
+select.sel{border:1px solid #767676;background:#fff;padding:0 .5rem;max-width:100%}
+input.q{flex:1 1 12rem;min-height:44px;border:1px solid #767676;border-radius:10px;padding:0 .7rem;min-width:0}
+.mut{color:var(--mut);font-size:.9rem}.small{font-size:.85rem}
+.chips{display:flex;flex-wrap:wrap;gap:.4rem;margin:.5rem 0}.chips button{border:1px solid var(--g);background:#fff;color:var(--g);padding:0 .8rem;border-radius:22px}
+.chips button[aria-pressed=true]{background:var(--g);color:#fff}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:.7rem;margin:.5rem 0}
+.card h3{margin:0 0 .2rem;font-size:1.05rem}
+.badge{display:inline-block;font-size:.8rem;padding:.1rem .5rem;border-radius:8px;background:#e8f5e9;color:#1b5e20;margin:.15rem 0}
+.badge.cn{background:#fdecea;color:#8e1c12}.badge.ko{background:#e8eaf6;color:#283593}.badge.o{background:#eee;color:#333}
+.links{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.4rem}.links a{display:inline-flex;align-items:center;min-height:44px;padding:0 .7rem;border:1px solid #b9c7b9;border-radius:10px;text-decoration:none;background:#fafcfa}
+.dist{float:right;font-weight:bold;color:var(--g2);margin-left:.5rem}
+table{width:100%;border-collapse:collapse}td,th{padding:.45rem .3rem;border-top:1px solid #e6e6e6;text-align:left;vertical-align:top}
+.price{font-weight:bold;font-size:1.1rem;white-space:nowrap}.best{background:#e8f5e9}
+.pl{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.2rem .6rem;padding:.5rem 0;border-top:1px solid #e6e6e6}
+.pl .who{flex:1 1 14rem}.pl .amt{text-align:right;flex:0 0 auto}
+.pl a{display:inline-flex;align-items:center;min-height:44px}
+.promo{color:#a00;font-weight:bold;font-size:.8rem}
+.err{color:#8a1c00;font-weight:bold}
+.qtyb{display:inline-flex;align-items:center;gap:.3rem}.qtyb button{border:1px solid #999;background:#fff;width:44px}
+.chooser{display:flex;flex-direction:column;gap:.4rem;margin-top:.4rem}.chooser button{text-align:left;padding:.3rem .7rem;border:1px solid var(--g);background:#f6fbf6}
+footer{max-width:56rem;margin:1rem auto 2rem;padding:0 .75rem;font-size:.85rem;color:var(--mut)}
+.sr{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+#toast{position:fixed;left:50%;bottom:1rem;transform:translateX(-50%);background:#222;color:#fff;padding:.6rem 1rem;border-radius:10px;display:none;z-index:9;max-width:90vw}
+button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #ffbf47;outline-offset:2px}
+</style></head><body>
+<header><div class="hd"><h1><span data-tr="title">紐西蘭超市格價</span><small data-tr="sub">奧克蘭 · 第一期</small></h1>
+<div class="tools"><label><span class="sr" data-tr="lang">語言</span><select id="lang" aria-label="Language"></select></label>
+<button class="fs" id="fDown" data-ar="fDown" aria-label="細啲字">A−</button><button class="fs" id="fReset" data-ar="fReset" aria-label="標準字">A</button><button class="fs" id="fUp" data-ar="fUp" aria-label="大啲字">A+</button>
+<button class="fs" id="installBtn" hidden data-tr="install">加到主畫面</button></div></div></header>
+<div class="note" id="disc"><b data-tr="notOfficial">不是超市官方價</b> · <span data-tr="dataFrom">價錢資料來自</span> <a href="https://www.baskt.nz/" target="_blank" rel="noopener">Baskt (baskt.nz)</a>. <span data-tr="verifyNote"></span></div>
+<nav class="tabs" role="tablist"><button role="tab" id="tb-stores" aria-selected="true" data-tr="tabStores">附近超市</button><button role="tab" id="tb-search" aria-selected="false" data-tr="tabSearch">搜產品</button><button role="tab" id="tb-list" aria-selected="false" data-tr="tabList">購物清單</button></nav>
+<main>
+<section class="panel" id="locPanel">
+ <div class="row"><button class="pri" id="locBtn" data-tr="useLoc">📍 用我位置</button>
+  <label class="row"><span data-tr="orArea">或者揀地區</span> <select class="sel" id="area"></select></label></div>
+ <div class="row" style="margin-top:.5rem"><span data-tr="radius">範圍</span><div class="seg" role="group"><button id="r20" aria-pressed="true"></button><button id="r30" aria-pressed="false"></button></div></div>
+ <p class="mut small" data-tr="privacy" style="margin:.4rem 0 0"></p>
+ <p id="locSt" class="small" role="status" style="margin:.3rem 0 0"></p>
+</section>
+<section id="v-stores" role="tabpanel">
+ <div class="chips" role="group" id="chips"></div>
+ <div id="storeList"></div>
+</section>
+<section id="v-search" role="tabpanel" hidden>
+ <form class="panel row" id="sForm"><label class="sr" for="q" data-tr="sGo">搜尋</label><input class="q" id="q" type="search" enterkeyhint="search" autocomplete="off" data-ip="sPh"><button class="pri" data-tr="sGo">搜尋</button>
+  <p class="mut small" data-tr="sHint" style="flex-basis:100%;margin:0"></p></form>
+ <div class="row" style="margin:.3rem 0"><span data-tr="sortBy">排序</span><div class="seg" role="group"><button id="sortP" aria-pressed="true" data-tr="sortPrice"></button><button id="sortU" aria-pressed="false" data-tr="sortUnit"></button></div></div>
+ <p class="mut small" data-tr="cnNote"></p>
+ <div id="sSt" role="status" class="small"></div><div id="results"></div><div id="moreWrap"></div>
+</section>
+<section id="v-list" role="tabpanel" hidden>
+ <div id="listBox"></div>
+ <div class="row"><button class="sec" id="refreshList" data-tr="refreshList">更新清單價錢</button><button class="sec" id="clearList" data-tr="clearList">清空清單</button></div>
+ <div id="lSt" class="small" role="status"></div>
+ <h2 style="font-size:1.1rem" data-tr="totals">每間超市總價</h2><p class="mut small" id="totNote"></p><div id="totals"></div>
+</section>
+</main>
+<footer><p><b data-tr="notOfficial"></b>. <span data-tr="bAttr">價錢</span>: <a href="https://www.baskt.nz/" target="_blank" rel="noopener">Baskt</a> (<a href="https://www.baskt.nz/developers" target="_blank" rel="noopener">API</a>). <span data-tr="osmAttr">超市位置</span>: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>, ODbL · Baskt locations.</p>
+<p data-tr="personal"></p><p class="small" id="ver"></p></footer>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="i18n.js"></script><script src="app.js"></script>
+</body></html>
