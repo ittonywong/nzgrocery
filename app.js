@@ -1,10 +1,9 @@
 'use strict';
 // ===== config =====
 const PROXY="https://nzgrocery-proxy.ytonywong.workers.dev";
-const VERSION="1.1.0 (2026-10-19)";
+const VERSION="1.2.0 (2026-10-19)";
 const CHAIN_NAME={"paknsave":"PAK'nSAVE","new-world":"New World","countdown":"Woolworths","farro":"Farro","other":""};
 const SEARCH_CHAINS=["paknsave","new-world","countdown","farro"];
-const AREAS=[["CBD","Auckland CBD",-36.8485,174.7633],["Manukau","Manukau",-36.9928,174.8799],["Albany","Albany",-36.7275,174.6950],["Henderson","Henderson",-36.8785,174.6310],["Botany","Botany",-36.9318,174.9116],["Mt Roskill","Mt Roskill",-36.9100,174.7370]];
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // ===== i18n =====
@@ -21,7 +20,7 @@ const FS=[87.5,100,112.5,125,150];let fsi=+localStorage.getItem('nzgFs');if(!(fs
 function applyFs(){document.documentElement.style.fontSize=FS[fsi]+'%';localStorage.setItem('nzgFs',fsi)}
 $('#fDown').onclick=()=>{if(fsi>0)fsi--;applyFs()};$('#fUp').onclick=()=>{if(fsi<FS.length-1)fsi++;applyFs()};$('#fReset').onclick=()=>{fsi=1;applyFs()};applyFs();
 // ===== state =====
-let DATA=null,here=null,hereLabel='',radius=+localStorage.getItem('nzgRadius')||20,filter='all',sortMode='price';
+let DATA=null,PLACES=null,here=null,hereLabel='',radius=+localStorage.getItem('nzgRadius')||10,filter='all',sortMode='price';
 const LK='nzgList';let list=[];try{list=JSON.parse(localStorage.getItem(LK)||'[]')}catch(e){list=[]}
 const saveList=()=>localStorage.setItem(LK,JSON.stringify(list));
 const toast=m=>{const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display='none',2200)};
@@ -53,9 +52,7 @@ function applyLang(){document.documentElement.lang=LANG;langSel.value=LANG;docum
  document.querySelectorAll('[data-tr]').forEach(e=>e.textContent=T(e.dataset.tr));
  document.querySelectorAll('[data-ip]').forEach(e=>e.placeholder=T(e.dataset.ip));
  document.querySelectorAll('[data-ar]').forEach(e=>e.setAttribute('aria-label',T(e.dataset.ar)));
- $('#r20').textContent=T('km',{n:20});$('#r30').textContent=T('km',{n:30});
- $('#area').innerHTML='<option value="">'+esc(T('areaPick'))+'</option>'+AREAS.map(a=>'<option value="'+esc(a[0])+'">'+esc(a[1])+'</option>').join('');
- if(hereLabel&&hereLabel!=='gps')$('#area').value=hereLabel;
+ RADII.forEach(r=>$('#r'+r).textContent=T('kmShort',{n:r}));pickRender();
  $('#ver').textContent='v'+VERSION+(DATA?' · OSM '+DATA.osmTimestamp.slice(0,10):'');
  renderAll()}
 langSel.onchange=()=>{LANG=langSel.value;localStorage.setItem('nzgLang',LANG);applyLang()};
@@ -64,18 +61,76 @@ const TABS=['stores','search','list'];
 function showTab(t){for(const x of TABS){$('#tb-'+x).setAttribute('aria-selected',x===t);$('#v-'+x).hidden=x!==t}if(t==='list')renderList()}
 TABS.forEach(t=>$('#tb-'+t).onclick=()=>showTab(t));
 // ===== location =====
-function setRadius(r){radius=r;localStorage.setItem('nzgRadius',r);$('#r20').setAttribute('aria-pressed',r===20);$('#r30').setAttribute('aria-pressed',r===30);renderAll()}
-$('#r20').onclick=()=>setRadius(20);$('#r30').onclick=()=>setRadius(30);
-$('#locBtn').onclick=()=>{if(!navigator.geolocation){$('#locSt').textContent=T('locDenied',{msg:'n/a'});return}
+// Round 3: two ways to set the centre — (a) GPS, only after the user agrees in our own consent box AND the browser prompt;
+// (b) manual City > Area > Place (official LINZ suburb/locality centroids from data/places.json). Everything is computed on
+// the phone: the position and the chosen place never leave it (price queries send the whole city's branch list).
+const RADII=[5,10,20,30];if(!RADII.includes(radius))radius=10;
+let sel={city:'',area:'',place:''},mode='',gpsNear=null;try{const o=JSON.parse(localStorage.getItem('nzgLoc')||'{}');if(o&&typeof o==='object')sel={city:o.city||'',area:o.area||'',place:o.place||''}}catch(e){}
+const saveSel=()=>localStorage.setItem('nzgLoc',JSON.stringify(sel)); // names only, never GPS coordinates
+const isZh=()=>LANG.startsWith('zh');
+const zhName=o=>!o?'':LANG==='zh-Hant'&&o.zh?o.zh+' '+o.name:LANG==='zh-Hans'&&o.zhs?o.zhs+' '+o.name:o.name; // English (official) names + Chinese labels for city/area
+const cityOf=id=>PLACES&&PLACES.cities.find(c=>c.id===id)||null;
+const areaOf=(c,id)=>c&&c.areas.find(a=>a.id===id)||null;
+const placeOf=(a,n)=>a&&a.places.find(p=>p[0]===n)||null;
+function curCity(){return cityOf(sel.city)}
+function LOCIDS(){const c=curCity();return c?c.chainLocIds:(DATA?DATA.chainLocIds:{})}
+function setRadius(r){radius=r;localStorage.setItem('nzgRadius',r);RADII.forEach(x=>$('#r'+x).setAttribute('aria-pressed',x===r));renderAll()}
+RADII.forEach(r=>$('#r'+r).onclick=()=>setRadius(r));
+function setPlace(cid,aid,pname,fromGps){const c=cityOf(cid),a=areaOf(c,aid),p=placeOf(a,pname);
+ sel={city:c?cid:'',area:a?aid:'',place:p?pname:''};saveSel();
+ if(!fromGps){mode=p?'place':'';gpsNear=null;here=p?[p[1],p[2]]:null;hereLabel=p?pname:''}
+ if(view.run&&view.run.q&&here&&!view.run.key.startsWith((sel.city||'akl')+'|')){const q=view.run.q;setTimeout(()=>openRun(q),0)} // re-run the search with the new city's branch list
+ renderAll()}
+// --- picker (accessible list of buttons; shown inline so it works with screen readers, zoom and small screens) ---
+let pickKind='';
+function openPick(kind){pickKind=kind;$('#pick').hidden=false;['City','Area','Place'].forEach(k=>$('#c'+k).setAttribute('aria-expanded',k.toLowerCase()===kind));
+ const f=$('#pickF');f.value='';pickRender();(kind==='place'&&!f.hidden?f:($('#pickL button[aria-current=true]')||$('#pickL button')||$('#pickX'))).focus()}
+function closePick(back){const k=pickKind;pickKind='';$('#pick').hidden=true;['City','Area','Place'].forEach(x=>$('#c'+x).setAttribute('aria-expanded','false'));if(back&&k)$('#c'+k[0].toUpperCase()+k.slice(1)).focus()}
+$('#pickX').onclick=()=>closePick(true);$('#pick').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();closePick(true)}});
+$('#cCity').onclick=()=>pickKind==='city'?closePick():openPick('city');$('#cArea').onclick=()=>pickKind==='area'?closePick():openPick('area');$('#cPlace').onclick=()=>pickKind==='place'?closePick():openPick('place');
+$('#pickF').oninput=()=>pickRender();
+const fold=x=>x.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\bmount\b/g,'mt');
+function crumb(k,lbl,val){$('#c'+k).innerHTML='<span class="k">'+esc(T(lbl))+'</span><span class="v'+(val?'':' none')+'">'+esc(val||T('pickNone'))+'</span>'}
+function pickRender(){if(!PLACES)return;const c=curCity(),a=areaOf(c,sel.area);
+ crumb('City','pCity',zhName(c));crumb('Area','pArea',zhName(a));crumb('Place','pPlace',sel.place);
+ $('#cArea').disabled=!c;$('#cPlace').disabled=!a;
+ if(!pickKind)return;const L=$('#pickL'),F=$('#pickF'),N=$('#pickN');let items=[];
+ if(pickKind==='city'){$('#pickT').textContent=T('pickCity');F.hidden=true;N.hidden=true;
+  items=PLACES.cities.map(x=>({v:x.id,t:zhName(x),c:T('nStores',{n:x.stores}),cur:x.id===sel.city}))}
+ else if(pickKind==='area'){$('#pickT').textContent=T('pickArea')+' · '+zhName(c);F.hidden=true;N.hidden=true;
+  items=c.areas.map(x=>({v:x.id,t:zhName(x),c:T('nPlaces',{n:x.places.length})+' · '+T('nStores',{n:x.stores}),cur:x.id===sel.area}))}
+ else{$('#pickT').textContent=T('pickPlace')+' · '+zhName(a);F.hidden=a.places.length<10;N.hidden=false;N.textContent=T('placeLabel');
+  const q=fold(F.value.trim());items=a.places.filter(p=>!q||fold(p[0]).includes(q)||(p[3]&&fold(p[3]).includes(q)))
+   .map(p=>({v:p[0],t:p[0],alt:q&&p[3]&&!fold(p[0]).includes(q)?p[3]:'',cur:p[0]===sel.place}))}
+ L.innerHTML=items.length?items.map(x=>'<li><button type="button" data-v="'+esc(x.v)+'"'+(x.cur?' aria-current="true"':'')+'><span>'+esc(x.t)+(x.alt?'<span class="alt">'+esc(x.alt)+'</span>':'')+'</span>'+(x.c?'<span class="c">'+esc(x.c)+'</span>':'')+'</button></li>').join('')
+  :'<li class="mut small" style="padding:.5rem">'+esc(T('noPlaceMatch'))+'</li>';
+ L.querySelectorAll('button[data-v]').forEach(b=>b.onclick=()=>{const v=b.dataset.v;
+  if(pickKind==='city'){if(v!==sel.city){const cc=cityOf(v);setPlace(v,cc.areas.length===1?cc.areas[0].id:'','')}else renderAll();
+   openPick(curCity().areas.length===1?'place':'area')}
+  else if(pickKind==='area'){if(v!==sel.area)setPlace(sel.city,v,'');openPick('place')}
+  else{setPlace(sel.city,sel.area,v);closePick();$('#cPlace').focus()}})}
+// --- GPS: our consent box first, then the browser's own permission prompt ---
+$('#locBtn').onclick=()=>{const g=$('#gpsAsk');g.hidden=!g.hidden;$('#locBtn').setAttribute('aria-expanded',!g.hidden);if(!g.hidden)$('#gpsOk').focus()};
+$('#gpsNo').onclick=()=>{$('#gpsAsk').hidden=true;$('#locBtn').setAttribute('aria-expanded','false');$('#locSt').textContent=T('gpsCancelled');$('#locBtn').focus()};
+$('#gpsOk').onclick=()=>{$('#gpsAsk').hidden=true;$('#locBtn').setAttribute('aria-expanded','false');
+ if(!navigator.geolocation){$('#locSt').textContent=T('locDenied',{msg:'n/a'});return}
  $('#locSt').textContent=T('locAsking');
- navigator.geolocation.getCurrentPosition(p=>{here=[p.coords.latitude,p.coords.longitude];hereLabel='gps';$('#area').value='';renderAll()},
+ navigator.geolocation.getCurrentPosition(p=>{here=[p.coords.latitude,p.coords.longitude];hereLabel='gps';mode='gps';gpsNear=nearestPlace(here);closePick();
+   if(gpsNear)setPlace(gpsNear.c.id,gpsNear.a.id,gpsNear.p[0],true);else{sel={city:'',area:'',place:''};renderAll()}},
   e=>{$('#locSt').innerHTML='<span class="err">'+esc(T('locDenied',{msg:e.message||e.code}))+'</span>'},{enableHighAccuracy:false,timeout:15000,maximumAge:0})};
-$('#area').onchange=e=>{const a=AREAS.find(x=>x[0]===e.target.value);if(a){here=[a[2],a[3]];hereLabel=a[0]}else{here=null;hereLabel=''}renderAll()};
+// nearest official place centroid (within 15 km) gives the GPS position a city/area/place label — all on the phone
+function nearestPlace(pt){let best=null;if(!PLACES)return null;for(const c of PLACES.cities)for(const a of c.areas)for(const p of a.places){const d=hv(pt[0],pt[1],p[1],p[2]);if(!best||d<best.d)best={c,a,p,d}}
+ return best&&best.d<=15?best:null}
 function renderLoc(){const st=$('#locSt');if(!here){st.textContent=T('locNone');return}
- const ns=nearby();const p=ns.filter(s=>s.kind==='priced'||s.kind==='zone').length;
- const from=hereLabel==='gps'?T('locHere'):T('locArea',{area:(AREAS.find(a=>a[0]===hereLabel)||[0,hereLabel])[1]});
- const outside=hv(here[0],here[1],-36.8485,174.7633)>70;
- st.innerHTML=esc(from)+' · '+esc(T('found',{n:ns.length,p}))+(outside?'<br><span class="err">'+esc(T('outside'))+'</span>':'')}
+ const ns=nearby();const p=ns.filter(s=>s.kind==='priced'||s.kind==='zone').length;const c=curCity(),a=areaOf(c,sel.area);
+ let h;if(mode==='gps')h=gpsNear?T('centreGps',{place:sel.place,area:zhName(a),city:zhName(c)}):T('locHere');
+ else h=T('centreFrom',{place:sel.place,area:zhName(a),city:zhName(c)});
+ h=esc(h)+' · '+esc(T('foundR',{r:radius,n:ns.length,p}));
+ if(mode==='gps'&&!gpsNear)h+='<br><span class="err">'+esc(T('outsideCov',{cities:PLACES.cities.map(zhName).join('、')}))+'</span>';
+ else if(c&&c.id!=='akl')h+='<br><span class="mut">'+esc(T('cityNote',{city:zhName(c)}))+'</span>';
+ st.innerHTML=h}
+function storeRegion(s){if(!PLACES||!s.city)return'';const c=cityOf(s.city);if(s.outside||!s.suburb)return T('outsideBoundary',{city:zhName(c)});
+ return zhName(areaOf(c,s.area))+' · '+s.suburb}
 // ===== stores tab =====
 const FILTERS=[['all','fAll'],['priced','fPriced'],['cn','fCn'],['ko','fKo'],['other','fOther']];
 function renderStores(){
@@ -85,7 +140,7 @@ function renderStores(){
  const ns=nearby().filter(s=>filter==='all'||(filter==='priced'?(s.kind==='priced'||s.kind==='zone'):filter==='other'?(s.kind==='other'||s.kind==='noprice'):s.kind===filter));
  box.innerHTML=ns.map(s=>{const k={priced:['','kPriced'],zone:['','kZone'],cn:['cn','kCn'],ko:['ko','kKo'],other:['o','kOther'],noprice:['o','kNoprice']}[s.kind];
   const nm=s.nameZh&&LANG.startsWith('zh')&&!s.name.includes(s.nameZh)?s.nameZh+' '+s.name:s.name;
-  return '<article class="card" data-kind="'+s.kind+'"><span class="dist">'+kmS(s.d)+'</span><h3>'+esc(nm)+'</h3>'+(s.addr?'<div class="mut small">'+esc(s.addr)+'</div>':'')+
+  return '<article class="card" data-kind="'+s.kind+'" data-id="'+esc(s.id)+'"><span class="dist">'+kmS(s.d)+'</span><h3>'+esc(nm)+'</h3>'+'<div class="rg">'+esc(storeRegion(s))+'</div>'+(s.addr?'<div class="mut small">'+esc(s.addr)+'</div>':'')+
   '<span class="badge '+k[0]+'">'+esc(T(k[1]))+'</span><div class="links">'+(s.web?'<a href="'+esc(s.web)+'" target="_blank" rel="noopener">'+esc(T('web'))+' ↗</a>':'')+
   '<a href="'+gmap(s)+'" target="_blank" rel="noopener">'+esc(T('nav'))+'</a><a href="'+amap(s)+'" target="_blank" rel="noopener">'+esc(T('apple'))+'</a></div></article>'}).join('');
 }
@@ -107,22 +162,22 @@ function getJSON(url,run){const c=RC.get(url);if(c&&Date.now()-c.at<1800000){NET
  f.refs++;run.reqs.add(url);return f.p}
 function releaseRun(run){for(const u of run.reqs){const f=INFL.get(u);if(f&&--f.refs<=0){f.ctl.abort();INFL.delete(u);NET.aborted++}}run.reqs.clear()}
 const RUNS=new Map(); // plan.key -> run (shared by suggestions and full results)
-function startRun(pl){let run=RUNS.get(pl.key);if(run&&!run.cancelled)return run;
- run={pl,items:new Map(),prices:{},total:0,done:0,errs:[],fetchedAt:null,reqs:new Set(),more:{},subs:new Set(),cancelled:false,finished:false};RUNS.set(pl.key,run);
+function startRun(pl){const key=(sel.city||'akl')+'|'+pl.key;let run=RUNS.get(key);if(run&&!run.cancelled)return run;
+ run={pl,key,loc:LOCIDS(),items:new Map(),prices:{},total:0,done:0,errs:[],fetchedAt:null,reqs:new Set(),more:{},subs:new Set(),cancelled:false,finished:false};RUNS.set(key,run);
  run.promise=execRun(run);return run}
-function cancelRun(run){if(!run||run.finished)return;run.cancelled=true;releaseRun(run);RUNS.delete(run.pl.key)}
-function ingestRun(run,chain,json,words,size){const d=json.data||{};const locSet=new Set(DATA.chainLocIds[chain]||[]);const got=[];
+function cancelRun(run){if(!run||run.finished)return;run.cancelled=true;releaseRun(run);RUNS.delete(run.key)}
+function ingestRun(run,chain,json,words,size){const d=json.data||{};const locSet=new Set(run.loc[chain]||[]);const got=[];
  for(const it of d.items||[]){if(!NZS.matches(it,words,size))continue;got.push(it);if(!run.items.has(it.id))run.items.set(it.id,{...it,chain:it.chain||chain})}
  for(const p of d.latestPrices||[]){if(!run.items.has(p.itemId)||!locSet.has(String(p.locationId)))continue;(run.prices[p.itemId]||(run.prices[p.itemId]={}))[p.locationId]=
   {c:p.priceCents,u:p.unitPriceCents,um:p.unitMeasure,promo:p.promoFlag?(p.promoLabel||1):0,obs:p.observedAt,reg:p.regularPriceCents}}
  return got}
-async function q1(run,chain,q,offset){if(run.cancelled)return null;const params={q,chain,locationId:DATA.chainLocIds[chain].join(','),limit:LIMIT};if(offset)params.offset=offset;
+async function q1(run,chain,q,offset){if(run.cancelled)return null;const params={q,chain,locationId:run.loc[chain].join(','),limit:LIMIT};if(offset)params.offset=offset;
  run.total++;notify(run);
  try{const r=await getJSON(reqUrl('/api/v1/items',params),run);if(run.cancelled)return null;
   if(r.fetchedAt&&(!run.fetchedAt||r.fetchedAt<run.fetchedAt))run.fetchedAt=r.fetchedAt;return r.json}
  catch(e){if(!run.cancelled&&e.name!=='AbortError')run.errs.push(e.message);return null}
  finally{run.done++;notify(run)}}
-async function execRun(run){const pl=run.pl;const chains=SEARCH_CHAINS.filter(c=>DATA.chainLocIds[c]);
+async function execRun(run){const pl=run.pl;const chains=SEARCH_CHAINS.filter(c=>run.loc[c]);
  const extra=pl.extra.map(x=>NZS.resolve(x,'en')).filter(Boolean);
  // wave 1: the phrase (+ size) per chain, the concept's extra phrases, and for 2+ words the main word
  const w1=[];for(const c of chains){const seen=new Set();const add=(q,words,size,tag)=>{if(!q||q.length<2||seen.has(q))return;seen.add(q);w1.push({c,q,words,size,tag})};
@@ -200,6 +255,7 @@ function statusLine(run,G){const pl=run.pl;let h='';
  if(run.mapped)h+='<div class="mut small">'+esc(T('mapped',{en:pl.phrase+(pl.size?' '+pl.size:'')}))+'</div>';
  if(G.prods.length)h+='<b>'+esc(T('resSummary',{q:run.q,n:G.prods.length,m:G.types.length}))+'</b>'+(run.fetchedAt?' <span class="mut small">· '+esc(T('fetchedAt',{t:fmtT(run.fetchedAt)}))+'</span>':'');
  else if(run.finished)h+='<p class="panel nores">'+esc(run.errs.length&&!run.items.size?T('err',{msg:run.errs[0]}):T('sNoneFriendly',{q:run.q}))+'</p>';
+ if(here&&(G.prods.length||run.finished))h+='<div class="mut small scope">'+esc(T('cmpScope',{place:mode==='gps'?T('youHere'):sel.place,r:radius,n:priceSlots().length}))+'</div>';
  return h}
 function renderResults(){const box=$('#results'),run=view.run;$('#cats').innerHTML='';
  if(!run){box.innerHTML='';$('#sSt').innerHTML=view.msg||'';$('#moreWrap').innerHTML='';return}
@@ -298,7 +354,7 @@ function doSearch(){const q=qIn.value.trim();if(!q)return;sugClose();openCards.c
 $('#sForm').onsubmit=e=>{e.preventDefault();doSearch()}; // Enter on the phone keyboard = view all
 $('#sortP').onclick=()=>{sortMode='price';$('#sortP').setAttribute('aria-pressed',true);$('#sortU').setAttribute('aria-pressed',false);renderResults()};
 $('#sortU').onclick=()=>{sortMode='unit';$('#sortU').setAttribute('aria-pressed',true);$('#sortP').setAttribute('aria-pressed',false);renderResults()};
-window.NZG_TEST={NET,RUNS,RC,INFL,get view(){return view},groupRun};
+window.NZG_TEST={NET,RUNS,RC,INFL,get view(){return view},groupRun,priceSlots,get sel(){return sel},get PLACES(){return PLACES}};
 function offerHtml(p,o,best){const s=o.slot;
  return '<div class="pl'+(best?' best':'')+'" data-loc="'+esc(s.loc)+'" data-cents="'+o.c+'"><div class="who"><b>'+esc(s.label)+'</b> <span class="mut small">'+kmS(s.d)+'</span>'+
  (s.zone?'<div class="mut small">'+esc(T('nearestBranch',{store:s.store.name,d:kmS(s.d)}))+'</div>':'')+
@@ -334,17 +390,19 @@ function renderList(){const box=$('#listBox');
 $('#clearList').onclick=()=>{if(list.length&&confirm(T('confirmClear'))){list=[];saveList();renderList()}};
 $('#refreshList').onclick=async()=>{const st=$('#lSt');st.textContent=T('refreshing');let err=null;const ids=[...new Set(list.flatMap(l=>l.items.map(i=>i.id)))];
  const fresh={};for(const id of ids){try{const r=await api('/api/v1/items/comparison',{itemId:id});fresh[id]=r.json.data}catch(e){err=e.message}}
- for(const l of list)for(const it of l.items){const d=fresh[it.id];if(!d)continue;const locSet=new Set(DATA.chainLocIds[it.chain]||[]);const pr={};
+ for(const l of list)for(const it of l.items){const d=fresh[it.id];if(!d)continue;const locSet=new Set(LOCIDS()[it.chain]||[]);const pr={};
   for(const p of d.prices||[])if(locSet.has(String(p.locationId)))pr[p.locationId]={c:p.priceCents,u:p.unitPriceCents,um:p.unitMeasure,promo:p.promoFlag?(p.promoLabel||1):0,obs:p.observedAt};
   it.prices=pr;it.savedAt=new Date().toISOString()}
  saveList();renderList();st.innerHTML=err?'<span class="err">'+esc(T('err',{msg:err}))+'</span>':esc(T('updated'))};
 // ===== render all =====
-function renderAll(){renderLoc();renderStores();renderResults();if(typeof sugRun!=='undefined'&&sugRun&&!sug.hidden)sugRender();if(!$('#v-list').hidden)renderList()}
+function renderAll(){pickRender();renderLoc();renderStores();renderResults();if(typeof sugRun!=='undefined'&&sugRun&&!sug.hidden)sugRender();if(!$('#v-list').hidden)renderList()}
 // ===== PWA =====
 let deferredPrompt=null;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;$('#installBtn').hidden=false});
 $('#installBtn').onclick=async()=>{if(!deferredPrompt)return;deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;$('#installBtn').hidden=true};
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 // ===== boot =====
-setRadius(radius===30?30:20);
-fetch('data/stores.json').then(r=>r.json()).then(d=>{DATA=d;applyLang()}).catch(e=>{$('#locSt').innerHTML='<span class="err">'+esc(T('err',{msg:e.message}))+'</span>'});
+setRadius(radius);
+Promise.all(['data/stores.json','data/places.json'].map(u=>fetch(u).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}))).then(([d,p])=>{DATA=d;PLACES=p;
+ if(sel.place){const c=cityOf(sel.city),a=areaOf(c,sel.area),pl=placeOf(a,sel.place);if(pl){mode='place';here=[pl[1],pl[2]];hereLabel=sel.place}else sel={city:c?sel.city:'',area:a?sel.area:'',place:''}}
+ applyLang()}).catch(e=>{$('#locSt').innerHTML='<span class="err">'+esc(T('err',{msg:e.message}))+'</span>'});
 applyLang();

@@ -48,6 +48,15 @@ table{width:100%;border-collapse:collapse}td,th{padding:.45rem .3rem;border-top:
 .err{color:#8a1c00;font-weight:bold}
 .qtyb{display:inline-flex;align-items:center;gap:.3rem}.qtyb button{border:1px solid #999;background:#fff;width:44px}
 .chooser{display:flex;flex-direction:column;gap:.4rem;margin-top:.4rem}.chooser button{text-align:left;padding:.3rem .7rem;border:1px solid var(--g);background:#f6fbf6}
+.wide{width:100%}.consent{border:2px solid var(--g);border-radius:10px;padding:.6rem .7rem;margin:.5rem 0;background:#f6fbf6}.consent h2,.pick h2{font-size:1.05rem;margin:0 0 .3rem;color:#123a14}
+.crumbs{display:flex;flex-direction:column;gap:.35rem}.crumb{display:flex;justify-content:space-between;gap:.5rem;align-items:center;text-align:left;width:100%;background:#fff;border:1px solid var(--g);color:var(--tx);padding:.35rem .7rem}
+.crumb .k{color:var(--mut);font-size:.85rem;flex:0 0 auto}.crumb .v{font-weight:bold;color:#123a14;flex:1 1 auto}.crumb .v.none{font-weight:normal;color:var(--mut)}.crumb::after{content:"▾";color:var(--g)}.crumb[aria-expanded=true]{outline:3px solid var(--g);outline-offset:1px}
+.crumb:disabled{border-color:var(--line);opacity:1}.crumb:disabled .v{color:var(--mut)}
+.pick{border:2px solid var(--g);border-radius:10px;padding:.5rem;margin:.5rem 0;background:#fff}.pick .ph{justify-content:space-between;flex-wrap:nowrap;align-items:flex-start}.pick .ph h2{flex:1 1 auto;min-width:0}.pick .ph button{flex:0 0 auto;white-space:nowrap}.pick .q{width:100%;margin:.3rem 0}
+.pickl{list-style:none;margin:.3rem 0 0;padding:0;max-height:60vh;overflow:auto}.pickl li{border-top:1px solid var(--line)}.pickl li:first-child{border-top:0}
+.pickl button{width:100%;display:flex;justify-content:space-between;gap:.5rem;align-items:center;text-align:left;background:#fff;border:0;border-radius:0;color:var(--tx);padding:.3rem .5rem}
+.pickl button[aria-current=true]{background:#e8f5e9;font-weight:bold}.pickl .c{color:var(--mut);font-size:.85rem;white-space:nowrap}.pickl .alt{color:var(--mut);font-size:.8rem;display:block;font-weight:normal}
+.rg{font-size:.85rem;color:#2f4f2f;margin:.1rem 0}.seg button{padding:0 .75rem}
 footer{max-width:56rem;margin:1rem auto 2rem;padding:0 .75rem;font-size:.85rem;color:var(--mut)}
 .sr{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
 #toast{position:fixed;left:50%;bottom:1rem;transform:translateX(-50%);background:#222;color:#fff;padding:.6rem 1rem;border-radius:10px;display:none;z-index:9;max-width:90vw}
@@ -77,7 +86,7 @@ button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{ou
 @keyframes sp{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.spin{animation:none}}
 .nores{color:#1a1a1a}
 </style></head><body>
-<header><div class="hd"><h1><span data-tr="title">紐西蘭超市格價</span><small data-tr="sub">奧克蘭 · 第一期</small></h1>
+<header><div class="hd"><h1><span data-tr="title">紐西蘭超市格價</span><small data-tr="sub">奧克蘭・威靈頓・基督城・咸美頓</small></h1>
 <div class="tools"><label><span class="sr" data-tr="lang">語言</span><select id="lang" aria-label="Language"></select></label>
 <button class="fs" id="fDown" data-ar="fDown" aria-label="細啲字">A−</button><button class="fs" id="fReset" data-ar="fReset" aria-label="標準字">A</button><button class="fs" id="fUp" data-ar="fUp" aria-label="大啲字">A+</button>
 <button class="fs" id="installBtn" hidden data-tr="install">加到主畫面</button></div></div></header>
@@ -85,9 +94,15 @@ button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{ou
 <nav class="tabs" role="tablist"><button role="tab" id="tb-stores" aria-selected="true" data-tr="tabStores">附近超市</button><button role="tab" id="tb-search" aria-selected="false" data-tr="tabSearch">搜產品</button><button role="tab" id="tb-list" aria-selected="false" data-tr="tabList">購物清單</button></nav>
 <main>
 <section class="panel" id="locPanel">
- <div class="row"><button class="pri" id="locBtn" data-tr="useLoc">📍 用我位置</button>
-  <label class="row"><span data-tr="orArea">或者揀地區</span> <select class="sel" id="area"></select></label></div>
- <div class="row" style="margin-top:.5rem"><span data-tr="radius">範圍</span><div class="seg" role="group"><button id="r20" aria-pressed="true"></button><button id="r30" aria-pressed="false"></button></div></div>
+ <button class="pri wide" id="locBtn" data-tr="gpsBtn" aria-controls="gpsAsk" aria-expanded="false">📍 用我而家位置</button>
+ <div id="gpsAsk" class="consent" role="region" aria-labelledby="gpsT" hidden><h2 id="gpsT" data-tr="gpsTitle"></h2><p data-tr="gpsText" class="small"></p>
+  <div class="row"><button class="pri" id="gpsOk" data-tr="gpsOk"></button><button class="sec" id="gpsNo" data-tr="gpsCancel"></button></div></div>
+ <p class="small lbl" data-tr="manual" style="margin:.6rem 0 .2rem"></p>
+ <div class="crumbs" role="group" data-ar="manual"><button class="crumb" id="cCity" aria-expanded="false" aria-controls="pick"></button><button class="crumb" id="cArea" aria-expanded="false" aria-controls="pick"></button><button class="crumb" id="cPlace" aria-expanded="false" aria-controls="pick"></button></div>
+ <div id="pick" class="pick" role="region" aria-labelledby="pickT" hidden><div class="row ph"><h2 id="pickT"></h2><button class="sec" id="pickX" data-tr="closePick"></button></div>
+  <label class="sr" for="pickF" data-tr="placeFilter"></label><input id="pickF" class="q" type="search" autocomplete="off" autocapitalize="off" spellcheck="false" data-ip="placeFilter" hidden>
+  <p id="pickN" class="mut small" hidden></p><ul id="pickL" class="pickl"></ul></div>
+ <div class="row" style="margin-top:.6rem"><span id="rLbl" data-tr="radiusLabel">範圍</span><div class="seg" role="group" aria-labelledby="rLbl" id="rSeg"><button id="r5" data-r="5" aria-pressed="false"></button><button id="r10" data-r="10" aria-pressed="true"></button><button id="r20" data-r="20" aria-pressed="false"></button><button id="r30" data-r="30" aria-pressed="false"></button></div></div>
  <p class="mut small" data-tr="privacy" style="margin:.4rem 0 0"></p>
  <p id="locSt" class="small" role="status" style="margin:.3rem 0 0"></p>
 </section>
