@@ -52,6 +52,30 @@ footer{max-width:56rem;margin:1rem auto 2rem;padding:0 .75rem;font-size:.85rem;c
 .sr{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
 #toast{position:fixed;left:50%;bottom:1rem;transform:translateX(-50%);background:#222;color:#fff;padding:.6rem 1rem;border-radius:10px;display:none;z-index:9;max-width:90vw}
 button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #ffbf47;outline-offset:2px}
+
+.sbox{position:relative}
+#sug{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:8;list-style:none;margin:0;padding:.25rem 0;background:#fff;border:1px solid #767676;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,.18);max-height:70vh;overflow:auto}
+#sug .opt{display:flex;align-items:center;gap:.55rem;min-height:52px;padding:.3rem .6rem;border-top:1px solid #eceeec;cursor:pointer}
+#sug .opt:first-child{border-top:0}#sug .opt[aria-selected=true]{background:#e8f5e9;outline:2px solid var(--g);outline-offset:-2px}
+#sug .nm{flex:1;min-width:0;line-height:1.3}#sug .nm b{font-weight:800;color:#000}#sug .sz{font-size:.85rem;white-space:nowrap}
+#sug .sp{font-weight:bold;white-space:nowrap;color:var(--g)}
+#sug .addb{flex:0 0 44px;height:44px;border-radius:50%;border:2px solid var(--g);background:#fff;color:var(--g);font-size:1.4rem;font-weight:bold;line-height:1;padding:0}
+#sug .all{font-weight:bold;color:var(--g);justify-content:space-between}#sug .hint{padding:.5rem .7rem;color:var(--mut);font-size:.9rem;display:flex;gap:.5rem;align-items:center}
+#sug .term .nm{font-weight:bold}
+.thumb{flex:0 0 40px;width:40px;height:40px;border-radius:10px;background:#eef1ee;color:#4a5a4a;display:inline-flex;align-items:center;justify-content:center}
+.cats{flex-wrap:nowrap;overflow-x:auto;padding-bottom:.2rem;-webkit-overflow-scrolling:touch;scrollbar-width:thin}.cats button{flex:0 0 auto;white-space:nowrap}
+.cats .n{display:inline-block;min-width:1.4em;padding:0 .3em;border-radius:9px;background:#e8f5e9;color:#1b5e20;font-size:.8rem;margin-left:.2rem}
+.cats button[aria-pressed=true] .n{background:#fff;color:#1b5e20}
+.th{font-size:1.1rem;margin:.9rem 0 .2rem}.gh{font-size:1rem;margin:.6rem 0 .1rem;color:#1b3a1d}
+.tsec{border-top:2px solid var(--line);margin-top:.6rem}
+.grp{margin-left:0}.ph{display:flex;gap:.55rem;align-items:flex-start}.pn{flex:1;min-width:0}.pn h3,.pn .brand{overflow-wrap:anywhere;word-break:break-word}.pb{text-align:right;flex:0 0 auto}
+.brand{font-weight:800;color:#123a14;font-size:.95rem}.brand.nob{font-weight:600;color:var(--mut);font-size:.85rem}
+.unitp{font-size:.85rem;color:#1a1a1a;white-space:nowrap}
+.acts{margin-top:.3rem}.wide{width:100%;margin:.3rem 0}
+.loading{display:flex;gap:.5rem;align-items:center;color:var(--mut);margin:.3rem 0}
+.spin{width:16px;height:16px;border:3px solid #c8d6c8;border-top-color:var(--g);border-radius:50%;animation:sp 0.9s linear infinite;flex:0 0 auto}
+@keyframes sp{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+.nores{color:#1a1a1a}
 </style></head><body>
 <header><div class="hd"><h1><span data-tr="title">紐西蘭超市格價</span><small data-tr="sub">奧克蘭 · 第一期</small></h1>
 <div class="tools"><label><span class="sr" data-tr="lang">語言</span><select id="lang" aria-label="Language"></select></label>
@@ -72,8 +96,10 @@ button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{ou
  <div id="storeList"></div>
 </section>
 <section id="v-search" role="tabpanel" hidden>
- <form class="panel row" id="sForm"><label class="sr" for="q" data-tr="sGo">搜尋</label><input class="q" id="q" type="search" enterkeyhint="search" autocomplete="off" data-ip="sPh"><button class="pri" data-tr="sGo">搜尋</button>
-  <p class="mut small" data-tr="sHint" style="flex-basis:100%;margin:0"></p></form>
+ <form class="panel" id="sForm" role="search"><div class="row sbox"><label class="sr" for="q" data-tr="sGo">搜尋</label><input class="q" id="q" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" data-ip="sPh"><button class="pri" data-tr="sGo">搜尋</button>
+  <ul id="sug" role="listbox" hidden data-ar="sugLabel" aria-label="搜尋建議"></ul></div>
+  <p class="mut small" data-tr="sHint" style="margin:.3rem 0 0"></p></form>
+ <div class="chips cats" id="cats" role="group"></div>
  <div class="row" style="margin:.3rem 0"><span data-tr="sortBy">排序</span><div class="seg" role="group"><button id="sortP" aria-pressed="true" data-tr="sortPrice"></button><button id="sortU" aria-pressed="false" data-tr="sortUnit"></button></div></div>
  <p class="mut small" data-tr="cnNote"></p>
  <div id="sSt" role="status" class="small"></div><div id="results"></div><div id="moreWrap"></div>
@@ -88,5 +114,5 @@ button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{ou
 <footer><p><b data-tr="notOfficial"></b>. <span data-tr="bAttr">價錢</span>: <a href="https://www.baskt.nz/" target="_blank" rel="noopener">Baskt</a> (<a href="https://www.baskt.nz/developers" target="_blank" rel="noopener">API</a>). <span data-tr="osmAttr">超市位置</span>: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>, ODbL · Baskt locations.</p>
 <p data-tr="personal"></p><p class="small" id="ver"></p></footer>
 <div id="toast" role="status" aria-live="polite"></div>
-<script src="i18n.js"></script><script src="app.js"></script>
+<script src="i18n.js"></script><script src="search-i18n.js"></script><script src="search.js"></script><script src="app.js"></script>
 </body></html>
