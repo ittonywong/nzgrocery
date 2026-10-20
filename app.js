@@ -1,13 +1,14 @@
 'use strict';
 // ===== config =====
 const PROXY="https://nzgrocery-proxy.ytonywong.workers.dev";
-const VERSION="1.2.0 (2026-10-19)";
+const VERSION="1.3.4 (2026-10-20)";
 const CHAIN_NAME={"paknsave":"PAK'nSAVE","new-world":"New World","countdown":"Woolworths","farro":"Farro","other":""};
 const SEARCH_CHAINS=["paknsave","new-world","countdown","farro"];
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // ===== i18n =====
-let LANG=localStorage.getItem('nzgLang');if(!I18N[LANG])LANG='zh-Hant';
+// Round 4: English is the default on a first visit (no saved choice), whatever the browser language is; the user's pick is saved in localStorage 'nzgLang'.
+let LANG=localStorage.getItem('nzgLang');if(!I18N[LANG])LANG='en';
 const T=(k,v={})=>(I18N[LANG][k]??I18N['zh-Hant'][k]??k).replace(/\{(\w+)\}/g,(_,x)=>v[x]??'');
 const LOC={"zh-Hant":"zh-HK","zh-Hans":"zh-CN","en":"en-NZ","ja":"ja-JP","mi":"en-NZ","ko":"ko-KR"};
 const fmtT=iso=>{try{return new Intl.DateTimeFormat(LOC[LANG],{timeZone:'Pacific/Auckland',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(iso))}catch(e){return iso}};
@@ -16,7 +17,7 @@ const ago=iso=>{const s=(Date.now()-Date.parse(iso))/1000;const rtf=new Intl.Rel
 const money=c=>'$'+(c/100).toFixed(2);
 const kmS=d=>(d<10?d.toFixed(1):Math.round(d))+' km';
 // ===== font size (rem) =====
-const FS=[87.5,100,112.5,125,150];let fsi=+localStorage.getItem('nzgFs');if(!(fsi>=0&&fsi<FS.length))fsi=1;
+const FS=[87.5,100,112.5,125,150];let fsi=localStorage.getItem('nzgFs');fsi=fsi===null?1:+fsi;if(!(fsi>=0&&fsi<FS.length))fsi=1; // round 4 fix: a fresh profile starts at the standard size (A), not A−
 function applyFs(){document.documentElement.style.fontSize=FS[fsi]+'%';localStorage.setItem('nzgFs',fsi)}
 $('#fDown').onclick=()=>{if(fsi>0)fsi--;applyFs()};$('#fUp').onclick=()=>{if(fsi<FS.length-1)fsi++;applyFs()};$('#fReset').onclick=()=>{fsi=1;applyFs()};applyFs();
 // ===== state =====
@@ -48,7 +49,8 @@ const gmap=s=>'https://www.google.com/maps/dir/?api=1&destination='+s.lat+','+s.
 const amap=s=>'https://maps.apple.com/?daddr='+s.lat+','+s.lng;
 // ===== UI: language =====
 const langSel=$('#lang');langSel.innerHTML=LANGS.map(([k,v])=>'<option value="'+k+'"'+(k==='mi'?' lang="mi"':'')+'>'+v+'</option>').join('');
-function applyLang(){document.documentElement.lang=LANG;langSel.value=LANG;document.title=T('title');
+const LANG_CODE={'en':'EN','zh-Hant':'繁中','zh-Hans':'简中','ja':'日本','mi':'MI','ko':'한국어'};
+function applyLang(){document.documentElement.lang=LANG;langSel.value=LANG;$('#langCode').textContent=LANG_CODE[LANG]||LANG;langSel.setAttribute('aria-label',T('lang')+(LANG==='en'?'':' / Language'));document.title=T('title');
  document.querySelectorAll('[data-tr]').forEach(e=>e.textContent=T(e.dataset.tr));
  document.querySelectorAll('[data-ip]').forEach(e=>e.placeholder=T(e.dataset.ip));
  document.querySelectorAll('[data-ar]').forEach(e=>e.setAttribute('aria-label',T(e.dataset.ar)));
@@ -100,15 +102,70 @@ function pickRender(){if(!PLACES)return;const c=curCity(),a=areaOf(c,sel.area);
  else if(pickKind==='area'){$('#pickT').textContent=T('pickArea')+' · '+zhName(c);F.hidden=true;N.hidden=true;
   items=c.areas.map(x=>({v:x.id,t:zhName(x),c:T('nPlaces',{n:x.places.length})+' · '+T('nStores',{n:x.stores}),cur:x.id===sel.area}))}
  else{$('#pickT').textContent=T('pickPlace')+' · '+zhName(a);F.hidden=a.places.length<10;N.hidden=false;N.textContent=T('placeLabel');
-  const q=fold(F.value.trim());items=a.places.filter(p=>!q||fold(p[0]).includes(q)||(p[3]&&fold(p[3]).includes(q)))
-   .map(p=>({v:p[0],t:p[0],alt:q&&p[3]&&!fold(p[0]).includes(q)?p[3]:'',cur:p[0]===sel.place}))}
- L.innerHTML=items.length?items.map(x=>'<li><button type="button" data-v="'+esc(x.v)+'"'+(x.cur?' aria-current="true"':'')+'><span>'+esc(x.t)+(x.alt?'<span class="alt">'+esc(x.alt)+'</span>':'')+'</span>'+(x.c?'<span class="c">'+esc(x.c)+'</span>':'')+'</button></li>').join('')
+  const q=F.value.trim();let ps=a.places.map((p,i)=>({p,i,m:q?bestMatch(placeKeys(c,a,p,true),pqFold(q)):null}));if(q)ps=ps.filter(x=>x.m).sort((x,y)=>x.m.tier-y.m.tier||x.m.ki-y.m.ki||x.i-y.i);
+  items=ps.map(({p,m})=>{const viaMain=!m||m.ki===0;return {v:p[0],t:p[0],h:viaMain&&m?hlKey(m):'',alt:m&&!viaMain?m.k.s:'',altH:m&&!viaMain?hlKey(m):'',cur:p[0]===sel.place}})}
+ L.innerHTML=items.length?items.map(x=>'<li><button type="button" data-v="'+esc(x.v)+'"'+(x.cur?' aria-current="true"':'')+'><span>'+(x.h||esc(x.t))+(x.alt?'<span class="alt">'+(x.altH||esc(x.alt))+'</span>':'')+'</span>'+(x.c?'<span class="c">'+esc(x.c)+'</span>':'')+'</button></li>').join('')
   :'<li class="mut small" style="padding:.5rem">'+esc(T('noPlaceMatch'))+'</li>';
  L.querySelectorAll('button[data-v]').forEach(b=>b.onclick=()=>{const v=b.dataset.v;
   if(pickKind==='city'){if(v!==sel.city){const cc=cityOf(v);setPlace(v,cc.areas.length===1?cc.areas[0].id:'','')}else renderAll();
    openPick(curCity().areas.length===1?'place':'area')}
   else if(pickKind==='area'){if(v!==sel.area)setPlace(sel.city,v,'');openPick('place')}
   else{setPlace(sel.city,sel.area,v);closePick();$('#cPlace').focus()}})}
+// ===== Round 4: place/suburb type-ahead (#pq). Computed on the phone from data/places.json + data/aliases.json; 0 network calls. =====
+// Matching: case-insensitive, macrons/diacritics ignored, "Mount"="Mt", "Saint"="St"; English names, Chinese city/area labels
+// (Traditional and Simplified) and a small documented set of well-known Chinese suburb names. Ranking: prefix > word-start > substring.
+let ALIAS={};
+function foldMap(s){let f='',a=[],b=[];for(let i=0;i<s.length;){const ch=String.fromCodePoint(s.codePointAt(i)),n=ch.length;
+  for(const x of ch.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()){f+=x;a.push(i);b.push(i+n)}i+=n}
+ for(const [re,to] of [[/\bmount\b/,'mt'],[/\bsaint\b/,'st']]){let m;while((m=re.exec(f))){const j=m.index,L=m[0].length;
+  f=f.slice(0,j)+to+f.slice(j+L);a.splice(j,L,a[j],a[j+L-1]);b.splice(j,L,b[j],b[j+L-1])}}
+ return {s,f,a,b}}
+const pqFold=q=>foldMap(q.replace(/\s+/g,' ')).f;
+const KC=new Map();const keyOf=s=>{let k=KC.get(s);if(!k){k=foldMap(s);KC.set(s,k)}return k};
+const isWordCh=ch=>/[\p{L}\p{N}]/u.test(ch)&&!/[\u3000-\u9fff\uf900-\ufaff]/.test(ch);
+function bestMatch(keys,q){if(!q)return null;let best=null;keys.forEach((k,ki)=>{if(!k)return;let j=k.f.indexOf(q);
+  while(j>=0){const tier=j===0?0:!isWordCh(k.f[j-1])?1:2;if(!best||tier<best.tier||(tier===best.tier&&ki<best.ki))best={tier,ki,k,j,n:q.length};if(tier===0)break;j=k.f.indexOf(q,j+1)}});return best}
+function hlKey(m){const s=m.k.s,x=m.k.a[m.j],y=m.k.b[m.j+m.n-1];return esc(s.slice(0,x))+'<b>'+esc(s.slice(x,y))+'</b>'+esc(s.slice(y))}
+function hlIn(disp,m){const p=disp.indexOf(m.k.s);if(p<0)return null;return esc(disp.slice(0,p))+hlKey(m)+esc(disp.slice(p+m.k.s.length))}
+function placeKeys(c,a,p,withAlt){const al=ALIAS[c.id+'|'+a.id+'|'+p[0]];const ks=[keyOf(p[0])];if(al){ks.push(keyOf(al[0]));if(al[1]!==al[0])ks.push(keyOf(al[1]))}if(withAlt&&p[3])ks.push(keyOf(p[3]));return ks}
+const nameKeys=o=>[keyOf(o.name),o.zh&&keyOf(o.zh),o.zhs&&o.zhs!==o.zh&&keyOf(o.zhs)];
+function pqSearch(q){const qf=pqFold(q.trim());if(!PLACES||!qf||(/^[\x00-\x7f]+$/.test(qf)&&qf.length<2))return null;const hit=[];
+ for(const c of PLACES.cities){let m=bestMatch(nameKeys(c),qf);if(m)hit.push({t:0,c,m});
+  for(const a of c.areas){m=bestMatch(nameKeys(a),qf);if(m)hit.push({t:1,c,a,m});
+   for(const p of a.places){m=bestMatch(placeKeys(c,a,p),qf);if(m)hit.push({t:2,c,a,p,m})}}}
+ const nm=h=>h.p?h.p[0]:h.a?h.a.name:h.c.name;
+ hit.sort((x,y)=>x.m.tier-y.m.tier||x.t-y.t||(y.m.k.f===qf)-(x.m.k.f===qf)||(x.m.ki>0)-(y.m.ki>0)||nm(x).length-nm(y).length||nm(x).localeCompare(nm(y)));
+ const out=[],seen=new Set(),id=h=>h.t+'|'+h.c.id+'|'+(h.a?h.a.id:'')+'|'+(h.p?h.p[0]:'');
+ const add=h=>{const k=id(h);if(!seen.has(k)){seen.add(k);out.push(h)}};hit.forEach(add);
+ for(const h of hit){if(h.m.tier>1)continue;if(h.t===0)h.c.areas.forEach(a=>add({t:1,c:h.c,a}));if(h.t===1)h.a.places.forEach(p=>add({t:2,c:h.c,a:h.a,p}))}
+ return out}
+const PQ_MAX=8;let pqRows=[],pqAct=-1,pqT=0,pqOpen=false;const pq=$('#pq'),pqL=$('#pqList'),pqD=$('#pqDrop'),pqM=$('#pqMsg');
+function pqShow(open){pqOpen=open;pqD.hidden=!open;pq.setAttribute('aria-expanded',String(open&&pqRows.length>0));if(!open){pqAct=-1;pq.removeAttribute('aria-activedescendant')}}
+function pqRender(){const v=pq.value;$('#pqX').hidden=!v;const all=pqSearch(v);if(all===null){pqRows=[];pqL.innerHTML='';pqShow(false);$('#pqSt').textContent='';return}
+ pqRows=all.slice(0,PQ_MAX);if(pqAct>=pqRows.length)pqAct=pqRows.length-1;
+ pqL.innerHTML=pqRows.map((h,i)=>{const disp=h.p?h.p[0]:zhName(h.a||h.c);let main=esc(disp),chip='';
+  if(h.m){const x=hlIn(disp,h.m);if(x)main=x;else chip=' <span class="al">('+hlKey(h.m)+')</span>'}
+  const sub=h.t===2?zhName(h.a)+' · '+zhName(h.c):h.t===1?T('pqArea',{n:h.a.places.length})+' · '+zhName(h.c):T('pqCity',{n:h.c.areas.length});
+  return '<li id="pqo'+i+'" role="option" class="opt" aria-selected="'+(i===pqAct)+'" data-i="'+i+'"><span class="pn">'+main+chip+'</span><span class="ps">'+esc(sub)+'</span></li>'}).join('');
+ const more=all.length-pqRows.length;pqM.hidden=!(all.length===0||more>0);pqM.textContent=all.length===0?T('pqNone'):more>0?T('pqMore',{n:more}):'';
+ $('#pqSt').textContent=all.length===0?T('pqNone'):T('pqCount',{n:all.length});
+ pqL.querySelectorAll('.opt').forEach(o=>{o.onmousedown=e=>e.preventDefault();o.onclick=()=>pqPick(+o.dataset.i)});
+ pqShow(true);if(pqAct>=0){pq.setAttribute('aria-activedescendant','pqo'+pqAct);const o=$('#pqo'+pqAct);o&&o.scrollIntoView&&o.scrollIntoView({block:'nearest'})}else pq.removeAttribute('aria-activedescendant')}
+function pqPick(i){const h=pqRows[i];if(!h)return;pqShow(false);$('#pqSt').textContent='';
+ if(h.t===2){pq.value=h.p[0];setPlace(h.c.id,h.a.id,h.p[0])}
+ else if(h.t===1){pq.value=zhName(h.a);if(h.c.id!==sel.city||h.a.id!==sel.area)setPlace(h.c.id,h.a.id,'');openPick('place')}
+ else{pq.value=zhName(h.c);if(h.c.id!==sel.city)setPlace(h.c.id,h.c.areas.length===1?h.c.areas[0].id:'','');else renderAll();openPick(curCity().areas.length===1?'place':'area')}
+ $('#pqX').hidden=!pq.value}
+pq.addEventListener('input',()=>{clearTimeout(pqT);pqAct=-1;pqT=setTimeout(pqRender,60)});
+pq.addEventListener('focus',()=>{if(pq.value)pqRender()});
+pq.addEventListener('blur',()=>setTimeout(()=>{if(document.activeElement!==pq)pqShow(false)},120));
+pq.addEventListener('keydown',e=>{const k=e.key;
+ if(k==='ArrowDown'||k==='ArrowUp'){e.preventDefault();clearTimeout(pqT);if(!pqOpen){pqAct=-1;pqRender()}if(!pqRows.length)return;
+  pqAct=k==='ArrowDown'?(pqAct+1)%pqRows.length:(pqAct<=0?pqRows.length-1:pqAct-1);pqRender()}
+ else if(k==='Enter'){clearTimeout(pqT);if(!pqOpen)pqRender();if(pqRows.length){e.preventDefault();pqPick(pqAct>=0?pqAct:0)}}
+ else if(k==='Escape'){e.preventDefault();if(pqOpen)pqShow(false);else{pq.value='';$('#pqX').hidden=true;$('#pqSt').textContent=''}}
+ else if(k==='Tab')pqShow(false)});
+$('#pqX').onclick=()=>{pq.value='';pqRows=[];pqShow(false);$('#pqX').hidden=true;$('#pqSt').textContent='';pq.focus()};
 // --- GPS: our consent box first, then the browser's own permission prompt ---
 $('#locBtn').onclick=()=>{const g=$('#gpsAsk');g.hidden=!g.hidden;$('#locBtn').setAttribute('aria-expanded',!g.hidden);if(!g.hidden)$('#gpsOk').focus()};
 $('#gpsNo').onclick=()=>{$('#gpsAsk').hidden=true;$('#locBtn').setAttribute('aria-expanded','false');$('#locSt').textContent=T('gpsCancelled');$('#locBtn').focus()};
@@ -169,7 +226,7 @@ function cancelRun(run){if(!run||run.finished)return;run.cancelled=true;releaseR
 function ingestRun(run,chain,json,words,size){const d=json.data||{};const locSet=new Set(run.loc[chain]||[]);const got=[];
  for(const it of d.items||[]){if(!NZS.matches(it,words,size))continue;got.push(it);if(!run.items.has(it.id))run.items.set(it.id,{...it,chain:it.chain||chain})}
  for(const p of d.latestPrices||[]){if(!run.items.has(p.itemId)||!locSet.has(String(p.locationId)))continue;(run.prices[p.itemId]||(run.prices[p.itemId]={}))[p.locationId]=
-  {c:p.priceCents,u:p.unitPriceCents,um:p.unitMeasure,promo:p.promoFlag?(p.promoLabel||1):0,obs:p.observedAt,reg:p.regularPriceCents}}
+  {c:p.priceCents,u:p.unitPriceCents,um:p.unitMeasure,obs:p.observedAt,reg:p.regularPriceCents}}
  return got}
 async function q1(run,chain,q,offset){if(run.cancelled)return null;const params={q,chain,locationId:run.loc[chain].join(','),limit:LIMIT};if(offset)params.offset=offset;
  run.total++;notify(run);
@@ -178,24 +235,27 @@ async function q1(run,chain,q,offset){if(run.cancelled)return null;const params=
  catch(e){if(!run.cancelled&&e.name!=='AbortError')run.errs.push(e.message);return null}
  finally{run.done++;notify(run)}}
 async function execRun(run){const pl=run.pl;const chains=SEARCH_CHAINS.filter(c=>run.loc[c]);
- const extra=pl.extra.map(x=>NZS.resolve(x,'en')).filter(Boolean);
+ const extra=pl.rawExtra?pl.extra.map(x=>({bq:x,words:pl.words,size:null})):pl.extra.map(x=>NZS.resolve(x,'en')).filter(Boolean); // alias extras (L&P: "paeroa") are sent as typed and matched against the alias
  // wave 1: the phrase (+ size) per chain, the concept's extra phrases, and for 2+ words the main word
  const w1=[];for(const c of chains){const seen=new Set();const add=(q,words,size,tag)=>{if(!q||q.length<2||seen.has(q))return;seen.add(q);w1.push({c,q,words,size,tag})};
-  add(NZS.chainQ(c,pl.phrase,pl.size),pl.words,pl.size,'main');
-  for(const x of extra)add(NZS.chainQ(c,x.words.join(' '),x.size),x.words,x.size,'extra');
+  add(NZS.chainQ(c,pl.bq||pl.phrase,pl.size),pl.words,pl.size,'main');
+  for(const x of extra)add(NZS.chainQ(c,x.bq||x.words.join(' '),x.size),x.words,x.size,'extra');
+  if(pl.brandQ)add(pl.brandQ,pl.words,pl.size,'brand'); // v1.3.2: brand + words -> ask Baskt for the brand (matches its brand field), filter on the phone
+  for(const a of pl.alt||[])add(NZS.chainQ(c,a,pl.size),pl.words,pl.size,'alt'); // vogel's -> also vogels; tip-top -> tip top
   if(pl.anchor)add(pl.anchor,pl.words,pl.size,'anchor')}
  const res1=await Promise.all(w1.map(async t=>{const j=await q1(run,t.c,t.q);if(!j)return{t,j};const got=ingestRun(run,t.c,j,t.words,t.size);return{t,j,got}}));
  if(run.cancelled)return;
  // wave 2 (single word, no size): data-driven paging. Page 2 only when page 1 was mostly real matches (≥50 %; "tea" also
  // matches "steak", so paging that is wasteful); the plural ("apples") only when the plural really appears in page-1 names.
- const w2=[];if(pl.words.length===1&&!pl.size){const w=pl.words[0],pw=NZS.plural(w);
+ const w2=[];for(const r of res1)if(r.t.tag==='brand'&&r.j&&(r.j.data.pagination||{}).hasMore)w2.push({c:r.t.c,q:r.t.q,off:r.j.data.pagination.nextOffset,words:r.t.words,size:r.t.size});
+ if(pl.words.length===1&&!pl.size){const w=pl.words[0],pw=/[\s&]/.test(w)?w:NZS.plural(w);
   const mains=res1.filter(r=>r.t.tag==='main'&&r.j);
   const pluralSeen=pw!==w&&mains.some(r=>(r.j.data.items||[]).some(it=>(' '+NZS.norm(it.name)+' ').includes(' '+pw+' ')));
   for(const r of mains){const pg=r.j.data.pagination||{};if(!pg.hasMore)continue;const n=(r.j.data.items||[]).length||1;
    if(r.got.length/n>=0.5)w2.push({c:r.t.c,q:r.t.q,off:pg.nextOffset,words:pl.words});else run.more[r.t.c]={q:r.t.q,off:pg.nextOffset};
    if(pluralSeen)w2.push({c:r.t.c,q:pw,off:0,words:pl.words})}}
  else{for(const r of res1)if(r.t.tag==='main'&&r.j&&(r.j.data.pagination||{}).hasMore)run.more[r.t.c]={q:r.t.q,off:r.j.data.pagination.nextOffset}}
- await Promise.all(w2.map(async t=>{const j=await q1(run,t.c,t.q,t.off);if(!j)return;ingestRun(run,t.c,j,t.words,null);
+ await Promise.all(w2.map(async t=>{const j=await q1(run,t.c,t.q,t.off);if(!j)return;ingestRun(run,t.c,j,t.words||pl.words,t.size||null);
   const pg=j.data.pagination||{};if(t.off&&pg.hasMore)run.more[t.c]={q:t.q,off:pg.nextOffset}}));
  if(run.cancelled)return;run.finished=true;notify(run)}
 async function loadMore(run){const ms=Object.entries(run.more);run.more={};run.finished=false;notify(run);
@@ -218,14 +278,30 @@ function groupRun(run){const slots=priceSlots();const prods=NZS.build([...run.it
  for(const t of tl){const subs=[...t.subs.values()].sort((a,b)=>sk(a.prods[0])-sk(b.prods[0]));
   const multi=subs.filter(g=>g.prods.length>1),single=subs.filter(g=>g.prods.length===1);
   t.groups=subs.length>=4&&single.length>1&&t.type!=='fruit'&&t.type!=='veg'?[...multi,{key:'_other',label:'',other:true,prods:single.flatMap(g=>g.prods).sort((a,b)=>sk(a)-sk(b))}]:subs}
- return{prods:out,types:tl,ownType:prods.ownType}}
+ const pl=run.pl;for(const p of out){p.hit=NZS.brandHit(p.brand,pl);p.pop=NZS.popRank(p.brand,pl.words)}
+ return{prods:out,types:tl,ownType:prods.ownType,brands:brandGroups(out,pl,prods.ownType,sk)}}
+// v1.3.2: results grouped by brand. Order: brand the user typed first, then well-known brands for the searched
+// product (search.js POPULAR), then brands with more matching products sold at more stores; "Other" (no brand) last.
+let BK=null;
+function brandKey(b){const n=NZS.norm(b);if(!n)return'';BK=BK||[...NZS.brandSet().keys()].sort((a,b)=>b.length-a.length);for(let i=BK.length-1;i>=0;i--){const k=BK[i];if(n===k||n.startsWith(k+' '))return k}return n} // shortest known brand prefix: Tip Top Super Soft / Tip Top Fruju -> Tip Top; Ploughmans Bakery -> Ploughmans
+function brandGroups(prods,pl,own,sk){const m=new Map();
+ for(const p of prods){const k=brandKey(p.brand);let g=m.get(k);if(!g)m.set(k,g={key:'b:'+(k||'-'),label:'',names:{},prods:[],hit:false,pop:-1,score:0,own:0,other:!k});
+  g.prods.push(p);if(p.brand)g.names[p.brand]=(g.names[p.brand]||0)+1;if(p.hit)g.hit=true;if(p.pop>=0&&(g.pop<0||p.pop<g.pop))g.pop=p.pop;
+  if(p.type===own)g.own++;g.score+=(p.type===own?2:1)*Math.min(p.of.length,30)}
+ for(const g of m.values()){const nm=Object.keys(g.names).sort((a,b)=>a.length-b.length||(g.names[b]-g.names[a]));
+  g.label=g.other?'':(NZS.brandSet().get(g.key.slice(2))||nm[0]||'');   // known-brand label, else the shortest name seen
+  g.prods.sort((a,b)=>sk(a)-sk(b))} // v1.3.3: inside a brand group strictly cheapest -> most expensive
+ const pr=g=>g.pop<0?1:0; // well-known brands for the product come first, then by how many matching products/stores
+ // relevance: 1) the brand typed  2) groups that hold the searched product itself (bread brands before a pickle brand;
+ // loose apples with no brand before apple-juice brands)  3) well-known brands  4) more matching products × stores  5) "Other" last on ties
+ return[...m.values()].sort((a,b)=>b.hit-a.hit||(b.own>0)-(a.own>0)||pr(a)-pr(b)||b.score-a.score||a.other-b.other||sk(a.prods[0])-sk(b.prods[0]))}
 // ---- display helpers ----
 const ICON={fruit:'M12 7c-3-2-7 0-7 5s3 9 5 9c1 0 1.5-.5 2-.5s1 .5 2 .5c2 0 5-4 5-9s-4-7-7-5zm0 0c0-2 1-4 3-5',veg:'M7 21l10-10M14 4c3 0 6 3 6 6l-6 6-6-6c0-3 3-6 6-6z',
  drinks:'M7 3h10l-1.5 18h-7zM7 8h10',tea:'M4 9h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5zM17 10h2a2 2 0 0 1 0 4h-2M8 3v3M12 3v3',coffee:'M4 9h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5zM17 10h2a2 2 0 0 1 0 4h-2',
  milk:'M8 3h8v3l2 3v12H6V9l2-3zM6 12h12',bakery:'M3 15c0-5 4-8 9-8s9 3 9 8zM3 15h18v3H3z',sauces:'M10 3h4v4l3 3v11H7V10l3-3z',other:'M4 8h16l-1.5 12h-13zM8 8a4 4 0 0 1 8 0'};
 const icon=t=>{const d=ICON[t]||ICON[{dairy:'milk',frozen:'milk',sweets:'other',snacks:'other',cereal:'other',pantry:'sauces',alcohol:'drinks',baby:'milk',health:'sauces',nonfood:'other',meat:'other',meals:'bakery'}[t]]||ICON.other;
  return '<span class="thumb" aria-hidden="true"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="'+d+'"/></svg></span>'};
-function hl(text,words){let s=esc(text);const forms=[...new Set(words.flatMap(w=>[...NZS.wordForms(w)]))].sort((a,b)=>b.length-a.length).map(f=>f.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+function hl(text,words){let s=esc(text);const forms=[...new Set(words.flatMap(w=>[...NZS.wordForms(w)]))].sort((a,b)=>b.length-a.length).map(f=>f.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/ and /g,'\\s*(?:&amp;|and)\\s*').replace(/ /g,"(?:[\\s’-]|&#39;)*").replace(/s$/,"(?:’|&#39;)?s"));
  if(!forms.length)return s;return s.replace(new RegExp('(^|[^A-Za-z])('+forms.join('|')+')(?![A-Za-z])','gi'),'$1<b>$2</b>')}
 const uLbl=u=>u.u==='kg'?T('perkg'):u.u==='L'?T('perL'):u.u==='ea'?T('perea'):'/'+u.u;
 const unitTxt=u=>u?T('uFmt',{p:money(u.c),u:uLbl(u)})+(u.calc?' ('+T('unitCalc')+')':''):'';
@@ -235,19 +311,42 @@ const nameHasSize=p=>{const z=sizeTxt(p);return !z||NZS.norm(p.name).replace(/\s
 const sizeTxt=p=>p.size==='kg'?'kg':p.size==='ea'?'':p.size;
 const chainsOf=p=>[...new Set(p.of.map(o=>o.slot.chain))].map(c=>CHAIN_NAME[c]).join(' · ');
 const typeName=t=>T('t_'+t);
+// ---- v1.3.4: product photos from Open Food Facts (photos CC BY-SA, index ODbL) ----
+// Matched ONLY by exact barcode: Baskt gives a GTIN for Woolworths items; a card uses the first GTIN of its items that has
+// a front photo in data/img/NN.json (built offline from the OFF bulk export; NN = GTIN mod 64). No name guessing (tested:
+// name+brand matching was right only ~51-62 % of the time). Photos load lazily, straight from images.openfoodfacts.org;
+// each photo links to its Open Food Facts product page (attribution). No supermarket images are used.
+const OFF_IMG='https://images.openfoodfacts.org/images/products/',OFF_PROD='https://world.openfoodfacts.org/product/';
+const IMGSH=new Map(); // shard -> {data|null, p:Promise}
+const g13=g=>{const d=String(g||'').replace(/\D/g,'').replace(/^0+/,'');return d.length>=8&&d.length<=14?d.padStart(13,'0'):null};
+const shardOf=g=>String(Number(g.slice(-6))%64).padStart(2,'0'); // = GTIN mod 64 (10^6 is a multiple of 64)
+function loadShard(k){let s=IMGSH.get(k);if(!s){s={data:null};s.p=fetch('data/img/'+k+'.json').then(r=>r.ok?r.json():{i:{}}).then(j=>{s.data=j.i||{};return s.data}).catch(()=>{s.data={};return s.data});IMGSH.set(k,s)}return s}
+const gtinsOf=p=>[...new Set(p.items.map(it=>g13(it.gtin)).filter(Boolean))];
+function photoOf(p){for(const g of gtinsOf(p)){const s=IMGSH.get(shardOf(g));if(!s||!s.data)continue;const v=s.data[g];if(v){const[l,r]=v.split('.');
+  return{g,src:OFF_IMG+g.slice(0,3)+'/'+g.slice(3,6)+'/'+g.slice(6,9)+'/'+g.slice(9)+'/front_'+l+'.'+r+'.200.jpg'}}}return null}
+const photoHtml=(f,alt)=>'<a class="thumb photo" href="'+OFF_PROD+f.g+'" target="_blank" rel="noopener" title="'+esc(T('imgTitle'))+'"><img src="'+f.src+'" alt="'+esc(alt)+'" loading="lazy" decoding="async" referrerpolicy="no-referrer" width="56" height="56"></a>';
+function thumbHtml(p){const f=photoOf(p);if(f)return photoHtml(f,p.name);const gs=gtinsOf(p);
+ return gs.length&&gs.some(g=>{const s=IMGSH.get(shardOf(g));return!s||!s.data})?icon(p.type).replace('class="thumb"','class="thumb" data-gt="'+esc(p.key)+'"'):icon(p.type)}
+function fillPhotos(box,G){const els=[...box.querySelectorAll('.thumb[data-gt]')];if(!els.length)return;const need=new Set();
+ for(const e of els){const p=G.prods.find(x=>x.key===e.dataset.gt);if(p)for(const g of gtinsOf(p))need.add(shardOf(g))}
+ Promise.all([...need].map(k=>loadShard(k).p)).then(()=>{for(const e of els){if(!e.isConnected)continue;const p=G.prods.find(x=>x.key===e.dataset.gt);if(!p)continue;
+  const f=photoOf(p);if(f)e.outerHTML=photoHtml(f,p.name);else e.removeAttribute('data-gt')}})}
+document.addEventListener('error',e=>{const t=e.target;if(t&&t.tagName==='IMG'&&t.parentNode&&t.parentNode.classList&&t.parentNode.classList.contains('photo')){const c=t.closest('.card');t.parentNode.outerHTML=icon(c?c.dataset.type:'other')}},true); // photo missing -> icon
 function prodCard(p,open,words){const show=open?p.of:p.of.slice(0,1);const id=esc(p.key);
  return '<article class="card prod" data-key="'+id+'" data-type="'+p.type+'" data-cents="'+p.best.c+'">'+
- '<div class="ph">'+icon(p.type)+'<div class="pn"><div class="bl">'+brandHtml(p)+'</div><h3>'+hl(p.name,words)+'</h3>'+
+ '<div class="ph">'+thumbHtml(p)+'<div class="pn"><div class="bl">'+brandHtml(p)+'</div><h3>'+hl(p.name,words)+'</h3>'+
  '<div class="mut small">'+esc([sizeTxt(p),p.sub.organic?T('organic'):''].filter(Boolean).join(' · '))+(sizeTxt(p)?' · ':'')+esc(T('chainsCarry',{list:chainsOf(p)}))+'</div></div>'+
- '<div class="pb"><div class="price">'+money(p.best.c)+'</div>'+(p.unit?'<div class="unitp">'+esc(unitTxt(p.unit))+'</div>':'')+'</div></div>'+
+ '<div class="pb"><div class="price cheap">'+money(p.best.c)+'</div>'+(p.unit?'<div class="unitp">'+esc(unitTxt(p.unit))+'</div>':'')+'</div></div>'+
  show.map((o,j)=>offerHtml(o.item,o,j===0)).join('')+
  '<div class="row acts">'+(p.of.length>1?'<button class="sec more" data-key="'+id+'" aria-expanded="'+(!!open)+'">'+esc(open?T('showLess'):T('showAll',{n:p.of.length}))+'</button>':'')+
  '<button class="pri add" data-key="'+id+'">'+esc(T('add'))+'</button></div><div class="chooserBox"></div></article>'}
 // ---- search UI state ----
 let view={run:null,type:'all',cmp:null,shown:{}};const openCards=new Set();
-function bindCards(box,G){box.querySelectorAll('.more').forEach(b=>b.onclick=()=>{const k=b.dataset.key;openCards.has(k)?openCards.delete(k):openCards.add(k);renderResults()});
+function bindCards(box,G){fillPhotos(box,G);box.querySelectorAll('.more').forEach(b=>b.onclick=()=>{const k=b.dataset.key;openCards.has(k)?openCards.delete(k):openCards.add(k);renderResults()});
  box.querySelectorAll('.add').forEach(b=>b.onclick=()=>{const p=G.prods.find(x=>x.key===b.dataset.key);if(p)addFlow(p,b)});
  [...box.querySelectorAll('[data-cat]'),...document.querySelectorAll('#cats [data-cat]')].forEach(b=>b.onclick=()=>{view.type=b.dataset.cat;renderResults();$('#cats').scrollIntoView({block:'nearest'})});
+ box.querySelectorAll('[data-bexp]').forEach(b=>b.onclick=()=>{view.shown[b.dataset.bexp]=1;renderResults()});
+ box.querySelectorAll('[data-bmore]').forEach(b=>b.onclick=()=>{view.shown._b=(view.shown._b||10)+10;renderResults()});
  box.querySelectorAll('[data-showmore]').forEach(b=>b.onclick=()=>{view.shown[b.dataset.showmore]=(view.shown[b.dataset.showmore]||40)+40;renderResults()})}
 function statusLine(run,G){const pl=run.pl;let h='';
  if(run.errs.length)h+='<div class="err">'+esc(T('partialErr',{n:run.errs.length}))+'</div>';
@@ -266,19 +365,22 @@ function renderResults(){const box=$('#results'),run=view.run;$('#cats').innerHT
  if(G.types.length)$('#cats').innerHTML='<span class="sr">'+esc(T('typesLabel'))+'</span><button data-cat="all" aria-pressed="'+(view.type==='all')+'">'+esc(T('catAll'))+' <span class="n">'+G.prods.length+'</span></button>'+
   G.types.map(t=>'<button data-cat="'+t.type+'" aria-pressed="'+(view.type===t.type)+'">'+esc(typeName(t.type))+' <span class="n">'+t.prods.length+'</span></button>').join('');
  let h='';
- if(view.type==='all'){for(const t of G.types){h+='<section class="tsec" data-type="'+t.type+'"><h2 class="th">'+esc(typeName(t.type))+' <span class="mut small">'+esc(T('nKinds',{n:t.groups.length}))+'</span></h2>';
-   for(const g of t.groups.slice(0,3))h+=groupHtml(g,words,3);
-   if(t.prods.length>3)h+='<button class="sec wide" data-cat="'+t.type+'">'+esc(T('seeAllCat',{cat:typeName(t.type),n:t.prods.length}))+' ›</button>';h+='</section>'}}
- else{const t=G.types.find(x=>x.type===view.type);const lim=view.shown[t.type]||40;let n=0;
-  h+='<h2 class="th">'+esc(typeName(t.type))+'</h2>';
-  for(const g of t.groups){if(n>=lim)break;const take=Math.min(g.prods.length,lim-n);h+=groupHtml(g,words,take);n+=take}
-  if(t.prods.length>lim)h+='<button class="sec wide" data-showmore="'+t.type+'">'+esc(T('moreProducts',{n:Math.min(40,t.prods.length-lim)}))+'</button>'}
+ // v1.3.2: brand groups (all categories, or only the chosen category chip). Inside a group: cheapest first.
+ const bl=view.type==='all'?G.brands:G.brands.map(g=>({...g,prods:g.prods.filter(p=>p.type===view.type)})).filter(g=>g.prods.length);
+ const nb=view.shown._b||10;h+='<p class="mut small bcount">'+esc(T('bCount',{n:bl.length}))+'</p>';
+ for(const g of bl.slice(0,nb))h+=brandGrpHtml(g,words,view.shown[g.key]?g.prods.length:3);
+ if(bl.length>nb)h+='<button class="sec wide" data-bmore="1">'+esc(T('bMore',{n:bl.length-nb}))+'</button>';
  box.innerHTML=h;bindCards(box,G);
  const more=run.finished&&Object.keys(run.more).length;$('#moreWrap').innerHTML=more?'<button class="sec" id="moreBtn">'+esc(T('sMore'))+'</button>':'';
  const mb=$('#moreBtn');if(mb)mb.onclick=()=>loadMore(run)}
+const fromHtml=first=>esc(T('fromP',{p:'\u0001'})).replace('\u0001','<span class="cheap">'+esc(sortMode==='unit'&&first.bestU?unitTxt(first.bestU.u):money(first.best.c))+'</span>');
+function brandGrpHtml(g,words,limit){const first=g.prods[0];const lbl=g.other?T('bOther'):g.label;
+ return '<section class="bgrp" data-brand="'+esc(g.key)+'"><h3 class="bh">'+esc(lbl)+(g.hit?' <span class="bmatch">'+esc(T('bMatch'))+'</span>':'')+' <span class="mut small">· '+esc(T('nKinds',{n:g.prods.length}))+' · '+fromHtml(first)+'</span></h3>'+
+ g.prods.slice(0,limit).map(p=>prodCard(p,openCards.has(p.key),words)).join('')+
+ (g.prods.length>limit?'<button class="sec wide" data-bexp="'+esc(g.key)+'">'+esc(T('bShowAll',{n:g.prods.length,b:lbl}))+' ›</button>':'')+'</section>'}
 function groupHtml(g,words,limit){const first=g.prods[0];
  const lbl=g.other?T('otherKinds'):(g.label||T('plain'));
- return '<div class="grp" data-sub="'+esc(g.key)+'"><h3 class="gh">'+esc(lbl)+' <span class="mut small">· '+esc(T('nKinds',{n:g.prods.length}))+' · '+esc(T('fromP',{p:sortMode==='unit'&&first.bestU?unitTxt(first.bestU.u):money(first.best.c)}))+'</span></h3>'+
+ return '<div class="grp" data-sub="'+esc(g.key)+'"><h3 class="gh">'+esc(lbl)+' <span class="mut small">· '+esc(T('nKinds',{n:g.prods.length}))+' · '+fromHtml(first)+'</span></h3>'+
  g.prods.slice(0,limit).map(p=>prodCard(p,openCards.has(p.key),words)).join('')+'</div>'}
 function renderCmp(G,words){const p=G.prods.find(x=>x.key===view.cmp);const box=$('#results');$('#moreWrap').innerHTML='';
  if(!p){box.innerHTML='<p class="panel">'+esc(T('cmpNone'))+'</p><button class="sec" id="cmpBack">'+esc(T('back'))+'</button>';$('#cmpBack').onclick=closeCmp;return}
@@ -298,7 +400,7 @@ const qIn=$('#q'),sug=$('#sug');let sugRun=null,sugTimer=0,sugActive=-1,sugItems
 function sugClose(){sug.hidden=true;qIn.setAttribute('aria-expanded','false');qIn.removeAttribute('aria-activedescendant');sugActive=-1}
 function sugRender(){const text=qIn.value.trim();if(!text){sugClose();return}
  let h='';sugItems=[];const run=sugRun;
- if(sugRun===null&&sugComp.length){h+='<li class="hint" role="presentation">'+esc(T('sugPick'))+'</li>'+sugComp.map((c,i)=>{sugItems.push({kind:'term',term:c.term});return '<li role="option" id="sg'+i+'" class="opt term" data-i="'+i+'"><span class="nm">'+esc(c.term)+(c.term!==c.en?' <span class="mut small">('+esc(c.en)+')</span>':'')+'</span></li>'}).join('')}
+ if(sugRun===null&&sugComp.length){h+='<li class="hint" role="presentation">'+esc(T('sugPick'))+'</li>'+sugComp.map((c,i)=>{sugItems.push({kind:'term',term:c.term});return '<li role="option" id="sg'+i+'" class="opt term" data-i="'+i+'"><span class="nm">'+esc(c.term)+(c.brand?' <span class="mut small">· '+esc(T('brandTag'))+'</span>':c.term!==c.en?' <span class="mut small">('+esc(c.en)+')</span>':'')+'</span></li>'}).join('')}
  else if(run){const G=here?groupRun(run):{prods:[],types:[]};const picks=pickSug(G);
   h+=picks.map((p,i)=>{sugItems.push({kind:'prod',p});return '<li role="option" id="sg'+i+'" class="opt" data-i="'+i+'">'+icon(p.type)+'<span class="nm">'+hl(shortName(p),run.pl.words)+' <span class="mut sz">'+esc([sizeTxt(p)||p.packSize||'',p.brand].filter(Boolean).join(' · '))+'</span></span><span class="sp">'+money(p.best.c)+'</span><button type="button" class="addb" tabindex="-1" data-i="'+i+'" aria-label="'+esc(T('addTo',{name:p.name}))+'">+</button></li>'}).join('');
   if(!run.finished)h+='<li class="hint" role="presentation"><span class="spin" aria-hidden="true"></span>'+esc(T('sugLoading'))+'</li>';
@@ -311,8 +413,8 @@ function sugRender(){const text=qIn.value.trim();if(!text){sugClose();return}
  sug.querySelectorAll('.addb').forEach(b=>b.onclick=e=>{e.stopPropagation();const it=sugItems[+b.dataset.i];if(it&&it.p){addDirect(it.p)}})}
 let sugComp=[],sugUnknown='';
 function pickSug(G){ // basic products first (fresh/simple names, sold at most chains), then one per other category
- const score=p=>[p.own&&p.sub.mode==='v'?0:(p.type==='fruit'||p.type==='veg')?1:2,-Math.min(p.of.length,30),p.name.split(' ').length];
- const cmp=(a,b)=>{const x=score(a),y=score(b);for(let i=0;i<3;i++)if(x[i]!==y[i])return x[i]-y[i];return a.best.c-b.best.c};
+ const score=p=>[p.hit?0:1,p.own&&p.sub.mode==='v'?0:(p.type==='fruit'||p.type==='veg')?1:2,p.pop<0?99:p.pop,-Math.min(p.of.length,30),p.name.split(' ').length];
+ const cmp=(a,b)=>{const x=score(a),y=score(b);for(let i=0;i<5;i++)if(x[i]!==y[i])return x[i]-y[i];return a.best.c-b.best.c};
  const out=[],subs=new Set(),types=new Map();
  for(const t of G.types)types.set(t.type,[...t.prods].sort(cmp));
  const order=[...types.keys()].sort((a,b)=>((b===G.ownType)-(a===G.ownType)));let round=0;
@@ -331,7 +433,7 @@ function onType(now){clearTimeout(sugTimer);const text=qIn.value.trim();
  if(!text||!minOk){if(sugRun&&sugRun!==view.run)cancelRun(sugRun);sugRun=null;sugComp=[];sugClose();return}
  sugTimer=setTimeout(()=>{ // debounce 350 ms: only the text that stays for 350 ms is looked up
   const r=NZS.resolve(text,LANG);let pl=NZS.plan(r);sugComp=[];sugUnknown='';
-  if(!pl||(!r.mapped&&text.length<4&&!NZS.C[NZS.singular(text.toLowerCase())])){ // short/partial word: complete from the word list (0 requests)
+  if(!pl||(!r.mapped&&text.length<4&&!NZS.C[NZS.singular(text.toLowerCase())])||(!r.brand&&!r.mapped&&!NZS.C[NZS.singular(NZS.norm(text))]&&!NZS.TERM.has(text.toLowerCase())&&NZS.complete(text,LANG).some(c=>c.brand))){ // v1.3.2: also complete brand names (tip -> Tip Top, anch -> Anchor) // short/partial word: complete from the word list (0 requests)
    const comp=NZS.complete(text,LANG);
    if(comp.length===1&&!pl){pl=NZS.plan(NZS.resolve(comp[0].en,'en'))}
    else if(comp.length===1){pl=NZS.plan(NZS.resolve(comp[0].en,'en'))}
@@ -354,14 +456,13 @@ function doSearch(){const q=qIn.value.trim();if(!q)return;sugClose();openCards.c
 $('#sForm').onsubmit=e=>{e.preventDefault();doSearch()}; // Enter on the phone keyboard = view all
 $('#sortP').onclick=()=>{sortMode='price';$('#sortP').setAttribute('aria-pressed',true);$('#sortU').setAttribute('aria-pressed',false);renderResults()};
 $('#sortU').onclick=()=>{sortMode='unit';$('#sortU').setAttribute('aria-pressed',true);$('#sortP').setAttribute('aria-pressed',false);renderResults()};
-window.NZG_TEST={NET,RUNS,RC,INFL,get view(){return view},groupRun,priceSlots,get sel(){return sel},get PLACES(){return PLACES}};
+window.NZG_TEST={NET,RUNS,RC,INFL,get view(){return view},groupRun,priceSlots,get sel(){return sel},get PLACES(){return PLACES},pqSearch,get ALIAS(){return ALIAS}};
 function offerHtml(p,o,best){const s=o.slot;
  return '<div class="pl'+(best?' best':'')+'" data-loc="'+esc(s.loc)+'" data-cents="'+o.c+'"><div class="who"><b>'+esc(s.label)+'</b> <span class="mut small">'+kmS(s.d)+'</span>'+
  (s.zone?'<div class="mut small">'+esc(T('nearestBranch',{store:s.store.name,d:kmS(s.d)}))+'</div>':'')+
  '<div class="mut small rec" data-obs="'+esc(o.obs)+'">'+esc(T('rec',{t:fmtT(o.obs)}))+' ('+esc(ago(o.obs))+')</div>'+
  '<a href="'+esc(productUrl(p))+'" target="_blank" rel="noopener" class="vlink">'+esc(T('verify'))+' ↗</a>'+(s.zone?'':' <span class="mut small">('+esc(T('verifyStore'))+')</span>')+'</div>'+
- '<div class="amt">'+(best?'<div class="badge">'+esc(T('cheapest'))+'</div>':'')+'<div class="price">'+money(o.c)+'</div>'+(o.u&&o.um?'<div class="mut small">'+esc(T('unit',{p:money(o.u),u:o.um}))+'</div>':'')+
- (o.promo?'<div class="promo">'+esc(T('promo'))+(typeof o.promo==='string'?' · '+esc(o.promo):'')+'</div>':'')+'</div></div>'}
+ '<div class="amt">'+(best?'<div class="badge">'+esc(T('cheapest'))+'</div>':'')+'<div class="price">'+money(o.c)+'</div>'+(o.u&&o.um?'<div class="mut small">'+esc(T('unit',{p:money(o.u),u:o.um}))+'</div>':'')+'</div></div>'} // v1.3.3: no 'Special' label (own use); only the cheapest price is red
 // ===== shopping list =====
 const slim=p=>({id:p.id,chain:p.chain,name:p.name,brand:p.brand,size:p.size,sku:p.sku,prices:p.prices,savedAt:new Date().toISOString()});
 // PAK'nSAVE and New World (both Foodstuffs) share product codes: add the twin automatically
@@ -391,18 +492,19 @@ $('#clearList').onclick=()=>{if(list.length&&confirm(T('confirmClear'))){list=[]
 $('#refreshList').onclick=async()=>{const st=$('#lSt');st.textContent=T('refreshing');let err=null;const ids=[...new Set(list.flatMap(l=>l.items.map(i=>i.id)))];
  const fresh={};for(const id of ids){try{const r=await api('/api/v1/items/comparison',{itemId:id});fresh[id]=r.json.data}catch(e){err=e.message}}
  for(const l of list)for(const it of l.items){const d=fresh[it.id];if(!d)continue;const locSet=new Set(LOCIDS()[it.chain]||[]);const pr={};
-  for(const p of d.prices||[])if(locSet.has(String(p.locationId)))pr[p.locationId]={c:p.priceCents,u:p.unitPriceCents,um:p.unitMeasure,promo:p.promoFlag?(p.promoLabel||1):0,obs:p.observedAt};
+  for(const p of d.prices||[])if(locSet.has(String(p.locationId)))pr[p.locationId]={c:p.priceCents,u:p.unitPriceCents,um:p.unitMeasure,obs:p.observedAt};
   it.prices=pr;it.savedAt=new Date().toISOString()}
  saveList();renderList();st.innerHTML=err?'<span class="err">'+esc(T('err',{msg:err}))+'</span>':esc(T('updated'))};
 // ===== render all =====
-function renderAll(){pickRender();renderLoc();renderStores();renderResults();if(typeof sugRun!=='undefined'&&sugRun&&!sug.hidden)sugRender();if(!$('#v-list').hidden)renderList()}
+function renderAll(){pickRender();if(pqOpen)pqRender();renderLoc();renderStores();renderResults();if(typeof sugRun!=='undefined'&&sugRun&&!sug.hidden)sugRender();if(!$('#v-list').hidden)renderList()}
 // ===== PWA =====
 let deferredPrompt=null;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;$('#installBtn').hidden=false});
 $('#installBtn').onclick=async()=>{if(!deferredPrompt)return;deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;$('#installBtn').hidden=true};
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 // ===== boot =====
 setRadius(radius);
-Promise.all(['data/stores.json','data/places.json'].map(u=>fetch(u).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}))).then(([d,p])=>{DATA=d;PLACES=p;
+Promise.all(['data/stores.json','data/places.json'].map(u=>fetch(u).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()})).concat(fetch('data/aliases.json').then(r=>r.ok?r.json():{aliases:[]}).catch(()=>({aliases:[]})))).then(([d,p,al])=>{DATA=d;PLACES=p;
+ ALIAS={};for(const x of (al&&al.aliases)||[])ALIAS[x.city+'|'+x.area+'|'+x.place]=[x.zh,x.zhs];
  if(sel.place){const c=cityOf(sel.city),a=areaOf(c,sel.area),pl=placeOf(a,sel.place);if(pl){mode='place';here=[pl[1],pl[2]];hereLabel=sel.place}else sel={city:c?sel.city:'',area:a?sel.area:'',place:''}}
  applyLang()}).catch(e=>{$('#locSt').innerHTML='<span class="err">'+esc(T('err',{msg:e.message}))+'</span>'});
 applyLang();

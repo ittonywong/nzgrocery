@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
+<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#1b5e20"><meta name="description" content="Auckland supermarket price comparison (personal, unofficial). Prices from Baskt — not official supermarket prices.">
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -10,12 +10,18 @@
 *{box-sizing:border-box}html{font-size:100%}body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans CJK TC","Noto Sans TC","PingFang HK",sans-serif;background:var(--bg);color:var(--tx);line-height:1.45;overflow-wrap:anywhere}
 a{color:#0b5394}button,select,input{font:inherit;color:inherit}
 button,select,.btn{min-height:44px;min-width:44px;border-radius:10px}
-header{background:var(--g);color:#fff;padding:.6rem .75rem calc(.6rem);position:relative}
-.hd{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;justify-content:space-between}
-h1{margin:0;font-size:1.25rem;line-height:1.25}h1 small{display:block;font-size:.8rem;font-weight:normal;opacity:.95}
-.tools{display:flex;gap:.35rem;align-items:center;flex-wrap:wrap}
-#lang{background:#fff;color:var(--g);border:0;padding:0 .5rem;font-size:.95rem;max-width:11rem}
-.fs{background:#fff;color:var(--g);border:0;font-weight:bold;padding:0 .4rem}
+/* Round 4: compact header — title + one tidy tools row (language + A−/A/A+), subtitle in one small line. Targets stay 44px. */
+header{background:var(--g);color:#fff;padding:.3rem .6rem .35rem;position:relative}
+.hd{display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .4rem}
+h1{flex:1 1 6rem;min-width:0;margin:0;font-size:.95rem;line-height:1.12}html[lang=ko] h1{word-break:keep-all}
+.hsub{margin:.1rem 0 0;font-size:.75rem;line-height:1.25;color:#fff}
+.tools{display:flex;gap:.3rem;align-items:center;flex-wrap:wrap;margin-left:auto}
+.langw{position:relative;display:inline-flex;align-items:center;gap:.25rem;min-width:44px;height:44px;padding:0 .5rem;background:#fff;color:var(--g);border-radius:10px;font-weight:bold;font-size:.9rem;white-space:nowrap}
+.langw select{position:absolute;inset:0;width:100%;height:100%;min-height:0;opacity:0;cursor:pointer;border:0;margin:0}
+.langw:focus-within{outline:3px solid #ffbf47;outline-offset:2px}
+.fsg{display:inline-flex;background:#fff;border-radius:10px;overflow:hidden}
+.fs{background:#fff;color:var(--g);border:0;font-weight:bold;padding:0 .4rem}.fsg .fs{border-radius:0}.fsg .fs+.fs{border-left:1px solid #b9cbb9}
+.fsg .fs:focus-visible{outline-offset:-3px}
 .note{background:#fff8e1;border-bottom:1px solid #e0c97a;padding:.5rem .75rem;font-size:.9rem}
 .note b{color:var(--warn)}
 nav.tabs{display:flex;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
@@ -41,10 +47,11 @@ input.q{flex:1 1 12rem;min-height:44px;border:1px solid #767676;border-radius:10
 .dist{float:right;font-weight:bold;color:var(--g2);margin-left:.5rem}
 table{width:100%;border-collapse:collapse}td,th{padding:.45rem .3rem;border-top:1px solid #e6e6e6;text-align:left;vertical-align:top}
 .price{font-weight:bold;font-size:1.1rem;white-space:nowrap}.best{background:#e8f5e9}
+/* v1.3.3: only the cheapest price is red (card price, the cheapest store row, group 'from' price, cheapest list total, suggestion price) */
+.cheap,.pl.best .price,tr.best .price,#sug .sp{color:#b00020}.cheap{font-weight:bold}
 .pl{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.2rem .6rem;padding:.5rem 0;border-top:1px solid #e6e6e6}
 .pl .who{flex:1 1 14rem}.pl .amt{text-align:right;flex:0 0 auto}
 .pl a{display:inline-flex;align-items:center;min-height:44px}
-.promo{color:#a00;font-weight:bold;font-size:.8rem}
 .err{color:#8a1c00;font-weight:bold}
 .qtyb{display:inline-flex;align-items:center;gap:.3rem}.qtyb button{border:1px solid #999;background:#fff;width:44px}
 .chooser{display:flex;flex-direction:column;gap:.4rem;margin-top:.4rem}.chooser button{text-align:left;padding:.3rem .7rem;border:1px solid var(--g);background:#f6fbf6}
@@ -57,6 +64,17 @@ table{width:100%;border-collapse:collapse}td,th{padding:.45rem .3rem;border-top:
 .pickl button{width:100%;display:flex;justify-content:space-between;gap:.5rem;align-items:center;text-align:left;background:#fff;border:0;border-radius:0;color:var(--tx);padding:.3rem .5rem}
 .pickl button[aria-current=true]{background:#e8f5e9;font-weight:bold}.pickl .c{color:var(--mut);font-size:.85rem;white-space:nowrap}.pickl .alt{color:var(--mut);font-size:.8rem;display:block;font-weight:normal}
 .rg{font-size:.85rem;color:#2f4f2f;margin:.1rem 0}.seg button{padding:0 .75rem}
+.pqw{position:relative}.pqbox{position:relative;display:flex}.pqbox .q{flex:1 1 auto;padding-right:2.8rem}
+.pqx{position:absolute;right:0;top:0;background:transparent;border:0;color:var(--mut);font-size:1.4rem;line-height:1}
+.pqdrop{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;background:#fff;border:2px solid var(--g);border-radius:10px;max-height:60vh;overflow:auto;box-shadow:0 6px 18px rgba(0,0,0,.18)}
+#pqList{list-style:none;margin:0;padding:0}#pqList:empty{display:none}
+#pqList li{border-top:1px solid var(--line)}#pqList li:first-child{border-top:0}
+#pqList .opt{display:flex;flex-direction:column;justify-content:center;min-height:48px;padding:.3rem .7rem;cursor:pointer}
+#pqList .opt[aria-selected=true]{background:#e8f5e9;outline:2px solid var(--g);outline-offset:-2px}
+#pqList .pn{font-size:1rem;color:var(--tx)}#pqList .pn b{color:#123a14;font-weight:800}#pqList .ps{font-size:.82rem;color:var(--mut)}#pqList .ps b{color:#123a14}
+#pqList .al{color:#2f4f2f}#pqList .kind{font-size:.75rem;font-weight:bold;color:#fff;background:var(--g2);border-radius:6px;padding:0 .35rem;margin-right:.35rem}
+.pqdrop .info{margin:0;padding:.6rem .7rem;color:var(--mut);font-size:.9rem;border-top:1px solid var(--line)}#pqList:empty+.info{border-top:0}
+.pickl .hit{color:#123a14;font-weight:800}
 footer{max-width:56rem;margin:1rem auto 2rem;padding:0 .75rem;font-size:.85rem;color:var(--mut)}
 .sr{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
 #toast{position:fixed;left:50%;bottom:1rem;transform:translateX(-50%);background:#222;color:#fff;padding:.6rem 1rem;border-radius:10px;display:none;z-index:9;max-width:90vw}
@@ -67,16 +85,18 @@ button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{ou
 #sug .opt{display:flex;align-items:center;gap:.55rem;min-height:52px;padding:.3rem .6rem;border-top:1px solid #eceeec;cursor:pointer}
 #sug .opt:first-child{border-top:0}#sug .opt[aria-selected=true]{background:#e8f5e9;outline:2px solid var(--g);outline-offset:-2px}
 #sug .nm{flex:1;min-width:0;line-height:1.3}#sug .nm b{font-weight:800;color:#000}#sug .sz{font-size:.85rem;white-space:nowrap}
-#sug .sp{font-weight:bold;white-space:nowrap;color:var(--g)}
+#sug .sp{font-weight:bold;white-space:nowrap}
 #sug .addb{flex:0 0 44px;height:44px;border-radius:50%;border:2px solid var(--g);background:#fff;color:var(--g);font-size:1.4rem;font-weight:bold;line-height:1;padding:0}
 #sug .all{font-weight:bold;color:var(--g);justify-content:space-between}#sug .hint{padding:.5rem .7rem;color:var(--mut);font-size:.9rem;display:flex;gap:.5rem;align-items:center}
 #sug .term .nm{font-weight:bold}
 .thumb{flex:0 0 40px;width:40px;height:40px;border-radius:10px;background:#eef1ee;color:#4a5a4a;display:inline-flex;align-items:center;justify-content:center}
+.thumb.photo{flex:0 0 56px;width:56px;height:56px;background:#fff;border:1px solid var(--line);overflow:hidden}.thumb.photo img{width:100%;height:100%;object-fit:contain;display:block}
 .cats{flex-wrap:nowrap;overflow-x:auto;padding-bottom:.2rem;-webkit-overflow-scrolling:touch;scrollbar-width:thin}.cats button{flex:0 0 auto;white-space:nowrap}
 .cats .n{display:inline-block;min-width:1.4em;padding:0 .3em;border-radius:9px;background:#e8f5e9;color:#1b5e20;font-size:.8rem;margin-left:.2rem}
 .cats button[aria-pressed=true] .n{background:#fff;color:#1b5e20}
 .th{font-size:1.1rem;margin:.9rem 0 .2rem}.gh{font-size:1rem;margin:.6rem 0 .1rem;color:#1b3a1d}
 .tsec{border-top:2px solid var(--line);margin-top:.6rem}
+.bgrp{border-top:2px solid var(--line);margin-top:.7rem;padding-top:.2rem}.bh{font-size:1.05rem;margin:.5rem 0 .2rem;color:#1b3a1d;overflow-wrap:anywhere}.bmatch{display:inline-block;font-size:.75rem;font-weight:600;background:#e3f1e4;color:#1b3a1d;border-radius:.6rem;padding:.05rem .45rem;vertical-align:middle}.bcount{margin:.3rem 0 0}
 .grp{margin-left:0}.ph{display:flex;gap:.55rem;align-items:flex-start}.pn{flex:1;min-width:0}.pn h3,.pn .brand{overflow-wrap:anywhere;word-break:break-word}.pb{text-align:right;flex:0 0 auto}
 .brand{font-weight:800;color:#123a14;font-size:.95rem}.brand.nob{font-weight:600;color:var(--mut);font-size:.85rem}
 .unitp{font-size:.85rem;color:#1a1a1a;white-space:nowrap}
@@ -86,10 +106,11 @@ button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{ou
 @keyframes sp{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.spin{animation:none}}
 .nores{color:#1a1a1a}
 </style></head><body>
-<header><div class="hd"><h1><span data-tr="title">紐西蘭超市格價</span><small data-tr="sub">奧克蘭・威靈頓・基督城・咸美頓</small></h1>
-<div class="tools"><label><span class="sr" data-tr="lang">語言</span><select id="lang" aria-label="Language"></select></label>
-<button class="fs" id="fDown" data-ar="fDown" aria-label="細啲字">A−</button><button class="fs" id="fReset" data-ar="fReset" aria-label="標準字">A</button><button class="fs" id="fUp" data-ar="fUp" aria-label="大啲字">A+</button>
-<button class="fs" id="installBtn" hidden data-tr="install">加到主畫面</button></div></div></header>
+<header><div class="hd"><h1><span data-tr="title">NZ Supermarket Price Check</span></h1>
+<div class="tools"><label class="langw"><span aria-hidden="true">🌐</span><span id="langCode" aria-hidden="true">EN</span><span aria-hidden="true">▾</span><select id="lang" aria-label="Language"></select></label>
+<span class="fsg" role="group" data-ar="fsGroup" aria-label="Text size"><button class="fs" id="fDown" data-ar="fDown" aria-label="Smaller text">A−</button><button class="fs" id="fReset" data-ar="fReset" aria-label="Standard text">A</button><button class="fs" id="fUp" data-ar="fUp" aria-label="Larger text">A+</button></span>
+<button class="fs" id="installBtn" hidden data-tr="install">Add to Home Screen</button></div></div>
+<p class="hsub" data-tr="sub">Auckland · Wellington · Christchurch · Hamilton</p></header>
 <div class="note" id="disc"><b data-tr="notOfficial">不是超市官方價</b> · <span data-tr="dataFrom">價錢資料來自</span> <a href="https://www.baskt.nz/" target="_blank" rel="noopener">Baskt (baskt.nz)</a>. <span data-tr="verifyNote"></span></div>
 <nav class="tabs" role="tablist"><button role="tab" id="tb-stores" aria-selected="true" data-tr="tabStores">附近超市</button><button role="tab" id="tb-search" aria-selected="false" data-tr="tabSearch">搜產品</button><button role="tab" id="tb-list" aria-selected="false" data-tr="tabList">購物清單</button></nav>
 <main>
@@ -97,6 +118,10 @@ button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{ou
  <button class="pri wide" id="locBtn" data-tr="gpsBtn" aria-controls="gpsAsk" aria-expanded="false">📍 用我而家位置</button>
  <div id="gpsAsk" class="consent" role="region" aria-labelledby="gpsT" hidden><h2 id="gpsT" data-tr="gpsTitle"></h2><p data-tr="gpsText" class="small"></p>
   <div class="row"><button class="pri" id="gpsOk" data-tr="gpsOk"></button><button class="sec" id="gpsNo" data-tr="gpsCancel"></button></div></div>
+ <div class="pqw"><label for="pq" class="small lbl" data-tr="pqLabel" style="display:block;margin:.6rem 0 .2rem">Type a suburb, area or city</label>
+  <div class="pqbox"><input id="pq" class="q" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="pqList" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go" data-ip="pqPh"><button type="button" class="pqx" id="pqX" hidden data-ar="pqClear" aria-label="Clear">×</button>
+  <div class="pqdrop" id="pqDrop" hidden><ul id="pqList" role="listbox" data-ar="pqList" aria-label="Place suggestions"></ul><p id="pqMsg" class="info" hidden></p></div></div>
+  <p id="pqSt" class="sr" role="status" aria-live="polite"></p></div>
  <p class="small lbl" data-tr="manual" style="margin:.6rem 0 .2rem"></p>
  <div class="crumbs" role="group" data-ar="manual"><button class="crumb" id="cCity" aria-expanded="false" aria-controls="pick"></button><button class="crumb" id="cArea" aria-expanded="false" aria-controls="pick"></button><button class="crumb" id="cPlace" aria-expanded="false" aria-controls="pick"></button></div>
  <div id="pick" class="pick" role="region" aria-labelledby="pickT" hidden><div class="row ph"><h2 id="pickT"></h2><button class="sec" id="pickX" data-tr="closePick"></button></div>
@@ -126,7 +151,7 @@ button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{ou
  <h2 style="font-size:1.1rem" data-tr="totals">每間超市總價</h2><p class="mut small" id="totNote"></p><div id="totals"></div>
 </section>
 </main>
-<footer><p><b data-tr="notOfficial"></b>. <span data-tr="bAttr">價錢</span>: <a href="https://www.baskt.nz/" target="_blank" rel="noopener">Baskt</a> (<a href="https://www.baskt.nz/developers" target="_blank" rel="noopener">API</a>). <span data-tr="osmAttr">超市位置</span>: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>, ODbL · Baskt locations.</p>
+<footer><p><b data-tr="notOfficial"></b>. <span data-tr="bAttr">價錢</span>: <a href="https://www.baskt.nz/" target="_blank" rel="noopener">Baskt</a> (<a href="https://www.baskt.nz/developers" target="_blank" rel="noopener">API</a>). <span data-tr="osmAttr">超市位置</span>: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>, ODbL · Baskt locations. <span data-tr="imgAttr">Product photos</span>: <a href="https://world.openfoodfacts.org/" target="_blank" rel="noopener">Open Food Facts</a> contributors, <a href="https://world.openfoodfacts.org/terms-of-use" target="_blank" rel="noopener">CC BY-SA</a>; <span data-tr="imgIdx">barcode index</span>: <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener">Open Food Facts database, ODbL</a>. <span data-tr="imgNote"></span></p>
 <p data-tr="personal"></p><p class="small" id="ver"></p></footer>
 <div id="toast" role="status" aria-live="polite"></div>
 <script src="i18n.js"></script><script src="search-i18n.js"></script><script src="search.js"></script><script src="app.js"></script>

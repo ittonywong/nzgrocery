@@ -1,0 +1,78 @@
+{
+"generated": "2026-10-19",
+"note": "Well-known Chinese names (published sources only). See research/regions/ALIASES-round4.md.",
+"aliases": [
+{
+"city": "akl",
+"area": "central",
+"place": "Auckland Central",
+"zh": "奧克蘭市中心",
+"zhs": "奥克兰市中心",
+"src": "Tourism New Zealand, newzealand.com/cn (official Chinese site) – https://www.newzealand.com/cn/auckland/ (\"奥克兰市中心\")"
+},
+{
+"city": "akl",
+"area": "central",
+"place": "Mission Bay",
+"zh": "使命灣",
+"zhs": "使命湾",
+"src": "Tourism New Zealand, newzealand.com/cn (official Chinese site) – https://www.newzealand.com/cn/auckland/ (\"使命湾 (Mission Bay)\")"
+},
+{
+"city": "akl",
+"area": "central",
+"place": "Kohimarama",
+"zh": "寇希瑪拉瑪",
+"zhs": "寇希玛拉玛",
+"src": "Tourism New Zealand, newzealand.com/cn (official Chinese site) – https://www.newzealand.com/cn/auckland/ (\"寇希玛拉玛 (Kohimarama)\")"
+},
+{
+"city": "akl",
+"area": "central",
+"place": "Saint Heliers",
+"zh": "聖海倫絲",
+"zhs": "圣海伦丝",
+"src": "Tourism New Zealand, newzealand.com/cn (official Chinese site) – https://www.newzealand.com/cn/auckland/ (\"圣海伦丝 (St Heliers)\")"
+},
+{
+"city": "akl",
+"area": "central",
+"place": "Mount Eden",
+"zh": "伊甸山",
+"zhs": "伊甸山",
+"src": "andyventure.com (zh-Hant travel guide \"伊甸山(Mount Eden)\") – https://andyventure.com/new-zealand-mount-eden/; the suburb takes the mountain's name"
+},
+{
+"city": "akl",
+"area": "north",
+"place": "Devonport",
+"zh": "德文波特",
+"zhs": "德文波特",
+"src": "Tourism New Zealand, newzealand.com/cn (official Chinese site) – https://www.newzealand.com/cn/feature/devonport-and-north-head/ (\"德文波特（Devonport）\")"
+},
+{
+"city": "akl",
+"area": "west",
+"place": "Piha",
+"zh": "皮哈",
+"zhs": "皮哈",
+"src": "Tourism New Zealand, newzealand.com/cn (official Chinese site) – https://www.newzealand.com/cn/auckland/ (\"皮哈沙滩 (Piha)\")"
+},
+{
+"city": "akl",
+"area": "rodney",
+"place": "Kumeū",
+"zh": "庫姆",
+"zhs": "库姆",
+"src": "Tourism New Zealand, newzealand.com/cn (official Chinese site) – https://www.newzealand.com/cn/auckland/ (\"库姆 (Kumeu)\")"
+},
+{
+"city": "akl",
+"area": "rodney",
+"place": "Matakana",
+"zh": "馬塔卡納",
+"zhs": "马塔卡纳",
+"src": "Tourism New Zealand, newzealand.com/cn (official Chinese site) – https://www.newzealand.com/cn/auckland/ (\"马塔卡纳 (Matakana)\")"
+}
+]
+}

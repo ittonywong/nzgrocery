@@ -23,7 +23,7 @@ mushroom:[[],"蘑菇,菇,冬菇|きのこ,マッシュルーム|버섯|harore"],
 ginger:[[],"薑,姜,生薑,生姜|しょうが,生姜,ショウガ|생강|"],capsicum:[[],"燈籠椒,灯笼椒,甜椒,彩椒|ピーマン,パプリカ|피망,파프리카|"],
 spinach:[[],"菠菜|ほうれん草|시금치|"],pumpkin:[[],"南瓜|かぼちゃ,カボチャ|호박|paukena"],kumara:[[],"番薯,紅薯,红薯,地瓜|さつまいも,サツマイモ|고구마|kūmara"],
 corn:[[],"粟米,玉米|とうもろこし,コーン|옥수수|kānga,kanga"],
-milk:[["milk 2l"],"牛奶,奶,鮮奶,鲜奶|牛乳,ミルク|우유|miraka"],bread:[[],"麵包,面包,方包|パン,食パン|빵|parāoa,paraoa"],
+milk:[["milk 2l"],"牛奶,奶,鮮奶,鲜奶|牛乳,ミルク|우유|miraka"],bread:[["toast","sandwich bread"],"麵包,面包,方包|パン,食パン|빵|parāoa,paraoa"],
 egg:[[],"雞蛋,鸡蛋,蛋|卵,たまご,玉子|계란,달걀|hēki,heki"],butter:[[],"牛油,黃油,黄油|バター|버터|pata"],
 cheese:[[],"芝士,起司,奶酪,乳酪|チーズ|치즈|tīhi,tihi"],yoghurt:[[],"乳酪,酸奶,優格,优格,酸乳酪|ヨーグルト|요거트,요구르트|"],
 cream:[[],"忌廉,奶油,鮮忌廉|クリーム,生クリーム|크림|kirīmi"],tofu:[[],"豆腐|豆腐|두부|"],
@@ -58,37 +58,73 @@ function segCJK(s){const out=[];let i=0;const keys=[...TERM.keys()].filter(k=>CJ
  while(i<s.length){if(/\s/.test(s[i])){i++;continue}const k=keys.find(k=>s.startsWith(k,i));if(k){out.push(TERM.get(k).en);i+=k.length}else{out.push(null);i++}}return out}
 const SIZE_RE=/^(\d+(?:\.\d+)?)\s*(l|ml|g|kg|pk|ea)$/i;
 // Resolve user text (any of 6 languages) -> {words:[english], size, unknown:[...], from}
-function resolve(text,lang){let raw=String(text||'').trim().toLowerCase().replace(/(\d)\s+(l|ml|g|kg|pk)\b/g,'$1$2');if(!raw)return null;
- const out={words:[],size:null,unknown:[],mapped:false,text:raw};
+// v1.3.2: phrase aliases for names users type in many ways (Baskt stores "L&P" as brand, Woolworths "l & p ... lemon & paeroa")
+const PHR=[{re:/^(l ?(&|and|n|'n'|\+) ?p|landp|lnp|lemon ?(&|and|n)? ?paeroa|paeroa)$/,q:'l&p',brand:'l and p',extra:['paeroa']}];
+// Brand index for detecting a brand inside the query ("tip top bread", "anchor milk", "vogels"). Ambiguous everyday words are skipped.
+const BRAND_SKIP=new Set(['value','budget','oak','bell','assam','jazz','envy','mars','e2','primo','macro','picky','karma','sassy','champion','trident','highlander','ofi','mama','almighty','dazzle','smitten','the collective','real meals','essentials','countdown','woolworths','farro','phoenix','ceres','keri','eta','raro','so good','apple & pear','deep south','monteiths','moa','duck island','factory road']);
+// Baskt's q is a literal substring: "vogels" does not find "Vogel's". For brands written with an apostrophe the query is
+// the shared stem before it ("vogel" finds Vogel's and Vogels); short stems (pic's) keep the plain form.
+function brandQuery(k){const v=KNOWN.concat(EXTRA_BRANDS).find(b=>norm(b)===k&&/'/.test(b));if(!v)return k;const st=v.split("'")[0].trim();return st.length>=4?st:k}
+let BRANDS=null;function brandSet(){if(BRANDS)return BRANDS;BRANDS=new Map();for(const b of KNOWN.concat(EXTRA_BRANDS)){const k=norm(b);if(k&&!BRAND_SKIP.has(k)&&!BRAND_SKIP.has(b)&&!BRANDS.has(k))BRANDS.set(k,titleCase(b.replace(/'s\b/,"'s")))}return BRANDS}
+// Resolve user text (any of 6 languages) -> {words:[english], size, unknown:[...], from, bq (Baskt query), brand, alt:[...]}
+// v1.3.2: every Latin token goes through the SAME norm() as the product text (so &, ' and - never block a match:
+// l&p = l and p, vogel's = vogels, tip-top = tip top); a brand inside the query becomes one phrase word and its own Baskt query.
+function resolve(text,lang){let raw=String(text||'').trim().toLowerCase().replace(/[’‘]/g,"'").replace(/(\d)\s+(l|ml|g|kg|pk)\b/g,'$1$2');if(!raw)return null;
+ const out={words:[],size:null,unknown:[],mapped:false,text:raw,bq:null,brand:null,brandQ:null,alt:[],extra:null};
  const whole=TERM.get(raw);
  if(whole&&!(EN.has(raw)&&lang!=='mi')&&!(whole.lang==='mi'&&lang!=='mi'&&/^[a-z ]+$/.test(raw)&&!/[āēīōū]/.test(raw)&&raw.length<4)){out.words=whole.en.split(' ');out.mapped=true;return out}
- for(const tok of raw.split(/\s+/)){const m=tok.match(SIZE_RE);if(m&&!out.size){out.size=(+m[1])+m[2];continue}
+ const rest=[];for(const tok of raw.split(/\s+/)){const m=tok.match(SIZE_RE);if(m&&!out.size){out.size=(+m[1])+m[2];continue}rest.push(tok)}
+ const restS=rest.join(' ');
+ for(const a of PHR)if(a.re.test(restS)){out.words=[a.brand];out.brand=a.brand;out.bq=a.q;out.brandQ=a.q;out.extra=a.extra;out.rawExtra=true;return out}
+ let lat=[],changed=false;
+ for(const tok of rest){
   if(CJK.test(tok)){const seg=segCJK(tok);if(seg.some(x=>x===null))out.unknown.push(tok);seg.filter(Boolean).forEach(e=>out.words.push(...e.split(' ')));out.mapped=true;continue}
   const t=TERM.get(tok);if(t&&!EN.has(tok)&&(t.lang!=='mi'||lang==='mi'||/[āēīōū]/.test(tok))){out.words.push(...t.en.split(' '));out.mapped=true;continue}
-  out.words.push(tok)}
- out.words=out.words.map(w=>/^[a-z]+$/.test(w)?singular(w):w).filter((w,i,a)=>w&&a.indexOf(w)===i);
+  const n=norm(tok);if(n!==tok)changed=true;if(!n)continue;
+  if(/&/.test(tok)&&/\s/.test(n)){out.words.push(n);lat.push(n);continue} // m&m -> one phrase "m and m"
+  for(const x of n.split(' ')){out.words.push(x);lat.push(x)}}
+ // brand detection (longest run of words that is a known brand; also its plural/singular form: vogel = vogels)
+ const B=brandSet();const w=out.words;let best=null;
+ for(let i=0;i<w.length;i++)for(let j=w.length;j>i;j--){const k=w.slice(i,j).join(' ');const k2=/s$/.test(k)?null:k+'s';
+  const hit=B.has(k)?k:(k2&&B.has(k2)?k2:null);if(hit&&(!best||j-i>best.n)){best={i,n:j-i,k:hit};break}}
+ if(best){w.splice(best.i,best.n,best.k);out.brand=best.k;out.brandQ=brandQuery(best.k);if(w.length===1&&!out.size&&out.brandQ!==best.k){out.bq=out.brandQ;changed=false}}
+ out.words=w.map(x=>x!==out.brand&&/^[a-z]+$/.test(x)?singular(x):x).filter((x,i,a)=>x&&a.indexOf(x)===i);
+ if(changed&&lat.length){out.bq=rest.join(' ');const a=lat.join(' ');if(a!==out.bq&&!/&/.test(out.bq))out.alt.push(a)} // Baskt gets the raw text (vogel's) and the plain form (vogels / tip top)
  return out}
 // Prefix completion for live suggestions (0 API calls): "app" -> apple, "蘋" -> 蘋果
 function complete(text,lang){const t=String(text||'').trim().toLowerCase();if(!t)return[];
  const res=[];for(const [k,v] of TERM){if(k.startsWith(t)&&k!==t&&(v.lang!=='mi'||lang==='mi'))res.push({term:k,en:v.en})}
  for(const en of EN)if(en.startsWith(t)&&en!==t)res.push({term:en,en});
+ if(!res.length&&t.length>=2&&/^[a-z0-9&' .-]+$/.test(t)){const nt=norm(t);for(const [k,lbl] of brandSet())if(k.startsWith(nt)&&k!==nt)res.push({term:lbl,en:k,brand:true})}
  const seen=new Set();return res.filter(r=>!seen.has(r.en)&&seen.add(r.en)).slice(0,8)}
 const STOP=new Set(['free','range','fresh','organic','nz','new','zealand','large','small','big','mini','the','and','with','of','pack','low','fat','lite','light','trim','full','premium','natural','pure','classic','original','plain','extra','super','value','sweet','red','green','white','black','blue']);
 // Plan the first-wave Baskt queries (per chain the app sends q + all Auckland locations + limit=100)
 function plan(r){if(!r||!r.words.length)return null;const w=r.words;
- const phrase=w.join(' ');const ex=(w.length===1&&C[w[0]]&&!r.size)?C[w[0]][0]:(C[phrase]&&!r.size?C[phrase][0]:[]);
- const anchor=w.length>1?(w.find(x=>EN.has(x))||[...w].filter(x=>!STOP.has(x)).sort((a,b)=>b.length-a.length)[0]||w[0]):null;
- return {key:phrase+(r.size?' '+r.size:''),phrase,size:r.size,words:w,extra:ex,anchor:anchor&&anchor!==phrase?anchor:null}}
+ const phrase=w.join(' ');const ex=r.extra?r.extra:(w.length===1&&C[w[0]]&&!r.size)?C[w[0]][0]:(C[phrase]&&!r.size?C[phrase][0]:[]);
+ const brandQ=r.brandQ&&(w.length>1||r.size||r.bq&&r.bq!==r.brandQ)?r.brandQ:null; // brand + more words (or a size): ask Baskt for the brand, filter on the phone
+ const anchor=brandQ?null:(w.length>1?(w.find(x=>EN.has(x))||[...w].filter(x=>!STOP.has(x)).sort((a,b)=>b.length-a.length)[0]||w[0]):null);
+ return {key:phrase+(r.size?' '+r.size:''),phrase,bq:r.bq||phrase,size:r.size,words:w,extra:ex,anchor:anchor&&anchor!==phrase?anchor:null,brand:r.brand||null,brandQ,alt:r.alt||[],rawExtra:!!r.rawExtra}}
 // per-chain q (Foodstuffs names end in "(2l)", Farro "2l", Woolworths keeps size separately)
 function chainQ(chain,words,size){const w=words;if(!size)return w;
  if(chain==='paknsave'||chain==='new-world')return w+' ('+size+')';if(chain==='farro')return w+' '+size;return w}
 // ---------- 2. matching (Baskt's q is substring; we require whole words on the phone) ----------
 const norm=s=>String(s||'').toLowerCase().replace(/[’']/g,'').replace(/&/g,' and ').replace(/[^a-z0-9.%+\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]+/g,' ').trim();
 function wordForms(w){const s=new Set([w,plural(w),singular(w)]);if(w==='yoghurt')['yogurt','yoghurts','yogurts'].forEach(x=>s.add(x));if(w==='kiwifruit')s.add('kiwi');if(w==='nappies'||w==='nappy')['nappy','nappies','nappie'].forEach(x=>s.add(x));if(w==='chip')s.add('chips');if(w==='tea')['teabag','teabags'].forEach(x=>s.add(x));return s}
-function matches(it,words,size){const hay=' '+norm(it.name+' '+(it.brand||''))+' ';
- for(const w of words){if(/\s/.test(w)){if(!hay.includes(' '+w+' '))return false;continue}let ok=false;for(const f of wordForms(w))if(hay.includes(' '+f+' ')){ok=true;break}if(!ok)return false}
+// v1.3.2: one searchable text per product = name + brand + pack size + category + subcategory (Baskt has no description field),
+// normalised the same way as the query. Synonyms only for matching (a "5 Star White Toast" loaf is bread).
+const MATCH_SYN={bread:['toast','loaf','loaves']};
+function hayOf(it){return ' '+norm([it.name,it.brand,it.packSize,it.category,it.subcategory].filter(x=>x!=null&&x!=='').join(' '))+' '}
+function matches(it,words,size){const hay=hayOf(it);
+ for(const w of words){if(/\s/.test(w)){if(!hay.includes(' '+w+' '))return false;continue}let ok=false;for(const f of [...wordForms(w),...(MATCH_SYN[w]||[])])if(hay.includes(' '+f+' ')){ok=true;break}if(!ok)return false}
  if(size){const z=(norm(it.name)+' '+norm(it.packSize)).replace(/(\d)\s+(l|ml|g|kg)\b/g,'$1$2').split(' ');if(!z.includes(size))return false}
  return true}
+// does the product's brand match the brand (or any word) the user typed?
+function brandHit(brand,pl){const b=' '+norm(brand)+' ';if(!brand)return false;if(pl.brand&&(b.includes(' '+pl.brand+' ')||(' '+pl.brand+' ').includes(b)))return true;
+ return pl.words.some(w=>w.length>2&&!EN.has(w)&&b.includes(' '+w+' '))}
+// well-known national brands per concept (used only to order brand groups; prices are never changed)
+const POPULAR={bread:['tip top','vogels','molenberg','freyas','ploughmans bakery','ploughmans','burgen','natures fresh','abes'],
+ milk:['anchor','meadow fresh','a2','lewis road creamery','puhoi valley','pams'],egg:['frenz','woodland','henergy','better eggs','pams','farmer brown','zeagold']};
+function popRank(brand,words){const b=norm(brand);for(const w of words){const l=POPULAR[w];if(!l)continue;const i=l.findIndex(x=>b===x||b.startsWith(x+' '));if(i>=0)return i}return -1}
 // ---------- 3. brand: Baskt field + cleanup / inference ----------
 const KNOWN=("a2,alpro,anchor,meadow fresh,lewis road creamery,lewis road,puhoi valley,puhoi,kapiti,mainland,pams,pams finest,woolworths,macro,macro organic,essentials,countdown,value,budget,"+
 "keri,just juice,charlie's,charlies,golden circle,fresh up,mother earth,annies,annie's,picky,phoenix,karma,karma drinks,most organics,benjer,e2,g-force,"+
@@ -105,6 +141,7 @@ const KNOWN=("a2,alpro,anchor,meadow fresh,lewis road creamery,lewis road,puhoi 
 "assam,wagh bakri,factory road,appleby farms,duck island,alchemy & tonic,almighty,farro,nz natural,kapiti ice cream,much moore,emma & tom's,"+
 "jalna,deep south,tip top ice cream,talley's,talleys,mccain,birds eye,sealord,john west,greenseas,s&w,oak,leggo's,dolmio,raro,vitasoy,so good,sun rice,sunrice,uncle ben's,"+
 "trident,maggi,indomie,nissin,mama,kikkoman,lee kum kee,ayam,blue dragon,chelsea,edmonds,champion,highlander,nutella,pic's,pics,marmite,vegemite,").split(',').filter(Boolean);
+const EXTRA_BRANDS=['l&p','burgen','natures fresh','ploughmans bakery','abes','frenz','woodland','henergy','better eggs','farmer brown','zeagold','kalo','the odd bunch','odd bunch','pams','lewis road creamery','meadow fresh','anchor'];
 const NOT_BRAND=new Set(['fresh fruit','fresh vegetables','fresh vegetable','fresh','fresh produce','loose','bakery','in store bakery','instore bakery','japanese','deli','fresh meat','butchery']);
 function titleCase(s){return String(s||'').replace(/\s+/g,' ').trim().replace(/(^|[\s(&+\-\/])([a-z])/g,(m,a,b)=>a+b.toUpperCase())}
 function makeBrandIndex(seenBrands,lowBrands){const m=new Map();
@@ -140,7 +177,7 @@ function typeOf(it){const n=' '+norm(it.name)+' ';const cat=norm((it.category||'
  if(c(/fruit and vegetables|fruit and veg|^produce|vegetables|salad/)&&!c(/frozen|canned|dried|dressing|dips?\b/)&&!has(/\b(juice|drink|chips|bars?|yoghurt|cheese|dressing|sauce|dip)\b/)){if(c(/vegetables|salad/)&&!c(/\bfruit\b(?! and vegetables)/))return FRUIT.test(n)&&!has(/\b(kit|salad|chopped)\b/)?'fruit':'veg';
   return FRUIT.test(n)||c(/apples|pears|citrus|berries|stonefruit|\bfruit\b(?! and veg)/)?'fruit':'veg'}
  // ready meals / pies / sandwiches by category (avoids "Fridge, Deli & Eggs" being read as dairy) or name
- if(s(/easy meals|ready meals|single meals|frozen meals|ready to eat|meal kits|chilled soups|dumplings|sandwich/)||has(/\b(sandwich|sandwiches|steam(ed)? buns|dumplings|mac and cheese|mac n cheese)\b/))return'meals';
+ if(s(/easy meals|ready meals|single meals|frozen meals|ready to eat|meal kits|chilled soups|dumplings|sandwich/)||has(/\b(sandwich|sandwiches|steam(ed)? buns|dumplings|mac and cheese|mac n cheese)\b/)&&!has(/\bsandwich (bread|loaf|thins?)\b/)&&!s(/bread/))return'meals';
  if(has(/\b(paper|sheets|grater|knife|knives|storage bags|containers?|baking cups)\b/)&&!has(/\brice paper\b/))return'nonfood';
  if(s(/bakery|bread|cakes|muffins|pastries|pie warmer/)&&!has(/\b(milk|juice|drink)\b/))return'bakery';
  // snacks by the specific category (Foodstuffs "Chips, Nuts & Snacks", "Biscuits & Crackers"; Farro "potato crisps", "crackers") or name
@@ -216,8 +253,8 @@ function build(items,prices,words,opts){opts=opts||{};const seen=[];for(const it
   const disp=(it.chain==='countdown'||it.chain==='farro'&&it.name===it.name.toLowerCase())?titleCase(it.name):it.name;
   if(!p){p={key:pk,type,brand,brandSrc:bsrc,name:disp,size:sizeOf(it),packSize:it.packSize,sub:sg,own:type===own,items:[]};prods.set(pk,p)}
   if(it.chain==='paknsave'||it.chain==='new-world'){p.name=it.name;if(bsrc==='baskt'&&brand){p.brand=brand;p.brandSrc='baskt'}}
-  p.items.push({id:it.id,chain:it.chain,name:it.name,brand:it.brand,size:it.packSize,sku:it.externalSku,category:it.category,subcategory:it.subcategory,prices:prices[it.id]||{}})}
+  p.items.push({id:it.id,chain:it.chain,name:it.name,brand:it.brand,size:it.packSize,sku:it.externalSku,gtin:it.gtin||null,category:it.category,subcategory:it.subcategory,prices:prices[it.id]||{}})}
  const out=[...prods.values()];out.ownType=own;return out}
-const api={C,TERM,resolve,complete,plan,chainQ,matches,singular,plural,typeOf,brandOf,makeBrandIndex,sizeOf,unitNorm,subGroup,productKey,build,TYPES,titleCase,norm,wordForms};
+const api={brandQuery,hayOf,brandHit,popRank,brandSet,POPULAR,MATCH_SYN,C,TERM,resolve,complete,plan,chainQ,matches,singular,plural,typeOf,brandOf,makeBrandIndex,sizeOf,unitNorm,subGroup,productKey,build,TYPES,titleCase,norm,wordForms};
 if(typeof module!=='undefined')module.exports=api;else root.NZS=api;
 })(typeof window!=='undefined'?window:globalThis);
