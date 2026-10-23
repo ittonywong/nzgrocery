@@ -1,7 +1,7 @@
 'use strict';
 // ===== config =====
 const PROXY="https://nzgrocery-proxy.ytonywong.workers.dev";
-const VERSION="1.3.4 (2026-10-20)";
+const VERSION="1.5.0 (2026-10-23)";
 const CHAIN_NAME={"paknsave":"PAK'nSAVE","new-world":"New World","countdown":"Woolworths","farro":"Farro","other":""};
 const SEARCH_CHAINS=["paknsave","new-world","countdown","farro"];
 const $=s=>document.querySelector(s);
@@ -339,10 +339,82 @@ function prodCard(p,open,words){const show=open?p.of:p.of.slice(0,1);const id=es
  '<div class="pb"><div class="price cheap">'+money(p.best.c)+'</div>'+(p.unit?'<div class="unitp">'+esc(unitTxt(p.unit))+'</div>':'')+'</div></div>'+
  show.map((o,j)=>offerHtml(o.item,o,j===0)).join('')+
  '<div class="row acts">'+(p.of.length>1?'<button class="sec more" data-key="'+id+'" aria-expanded="'+(!!open)+'">'+esc(open?T('showLess'):T('showAll',{n:p.of.length}))+'</button>':'')+
- '<button class="pri add" data-key="'+id+'">'+esc(T('add'))+'</button></div><div class="chooserBox"></div></article>'}
+ '<button class="sec hbtn" data-key="'+id+'" aria-expanded="'+histOpen.has(p.key)+'"><span aria-hidden="true">📈 </span>'+esc(T('histBtn'))+'</button>'+
+ '<button class="pri add" data-key="'+id+'">'+esc(T('add'))+'</button></div>'+(histOpen.has(p.key)?'<div class="histBox" data-key="'+id+'"></div>':'')+'<div class="chooserBox"></div></article>'}
+// ===== v1.5.0: price history, last 3 months, straight from Baskt's history (via the Worker), per store =====
+// Tapping a product asks the Worker for /api/v1/items/history for the item at each of the (up to) 6 nearest stores.
+// Every point is a date on which Baskt observed that price; lines are steps between observations and stop at the
+// last observation (nothing is extended or guessed). If Baskt fails or has nothing for a store, the v1.4 weekly files
+// data/history/NN.json (NN = itemId mod 16) are used for that store and marked "backup". No data -> "no records".
+const histOpen=new Set(),HSH=new Map(),HB=new Map(),HKEEP=92,HMAX=6,HCOL=['#0b5394','#c0392b','#1b7f3b','#8e44ad','#b9770e','#4a4a4a'],HDASH=['','6 3','2 2','8 3 2 3','4 4','1 3'];
+const hShard=id=>String(Number(id)%16).padStart(2,'0');
+function loadHist(k){let s=HSH.get(k);if(!s){s={data:null};s.p=fetch('data/history/'+k+'.json').then(r=>{if(!r.ok)throw 0;return r.json()}).then(j=>{s.data=j;return j}).catch(()=>{s.data={h:{},fail:1};return s.data});HSH.set(k,s)}return s}
+const nzYmd=t=>new Intl.DateTimeFormat('en-CA',{timeZone:'Pacific/Auckland',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(t));
+const hDay=ymd=>Math.round((Date.parse(ymd+'T00:00:00Z')-Date.parse('2026-01-01T00:00:00Z'))/864e5);
+const hDate=(d,base)=>{try{return new Intl.DateTimeFormat(LOC[LANG],{timeZone:'UTC',month:'short',day:'numeric'}).format(new Date(Date.parse((base||'2026-01-01')+'T00:00:00Z')+d*864e5))}catch(e){return String(d)}};
+const hFrom=()=>nzYmd(Date.now()-HKEEP*864e5); // same value all day -> the Worker's 12-hour cache is shared by everyone
+// Baskt history of one item at one store: {st:'ok'|'empty'|'err'|'cap', obs:[{t,c,promo}], at}
+function loadB(id,loc){const k=id+'|'+loc;let b=HB.get(k);if(b)return b;b={st:null};HB.set(k,b);
+ const u=new URL(PROXY+'/api/v1/items/history');u.searchParams.set('itemId',id);u.searchParams.set('locationId',loc);u.searchParams.set('from',hFrom());u.searchParams.set('limit','100');
+ b.p=fetch(u,{mode:'cors',credentials:'omit',referrerPolicy:'no-referrer'}).then(async r=>{
+  if(!r.ok){let e={};try{e=await r.json()}catch(x){}b.st=e&&e.error==='daily_cap'?'cap':'err';if(b.st==='err')HB.delete(k);return b} // errors are not remembered: tap again = try again
+  const j=await r.json(),ob=((j&&j.data&&j.data.observations)||[]).filter(o=>String(o.locationId)===String(loc)&&Number.isInteger(o.priceCents)&&o.priceCents>0&&o.observedAt);
+  b.obs=ob.map(o=>({t:o.observedAt,c:o.priceCents,promo:!!o.promoFlag})).sort((x,y)=>Date.parse(x.t)-Date.parse(y.t));b.at=r.headers.get('X-Fetched-At');b.st=b.obs.length?'ok':'empty';return b})
+ .catch(()=>{b.st='err';HB.delete(k);return b});return b}
+function histTargets(p){const seen=new Set(),out=[];for(const o of [...p.of].sort((a,b)=>a.slot.d-b.slot.d)){if(seen.has(o.slot.key))continue;seen.add(o.slot.key);out.push(o)}return out}
+function histSeries(p){const today=hDay(nzYmd(Date.now())),cut=today-HKEEP,all=histTargets(p),tg=all.slice(0,HMAX),out=[];let start=null,at=null,err=0,cap=0,fb=0;
+ for(const o of tg){const s=o.slot,id=String(o.item.id),b=HB.get(id+'|'+s.loc),pts=new Map();let src='';
+  if(b&&b.st==='ok'){src='b';if(b.at&&(!at||b.at>at))at=b.at;
+   for(const x of b.obs){const d=hDay(nzYmd(x.t));if(d<cut||d>today+1)continue;pts.set(d,{c:x.c,promo:x.promo,t:x.t})}} // latest observation of each day wins
+  else{if(b&&b.st==='cap')cap++;else if(!b||b.st!=='empty')err++;
+   const sh=HSH.get(hShard(id)),g=sh&&sh.data&&sh.data.h&&sh.data.h[id]; // fallback: v1.4 weekly files
+   if(g)for(const[locs,flat]of Object.entries(g)){if(!locs.split(',').includes(String(s.loc)))continue;
+    for(let i=0;i<flat.length;i+=2){const d=flat[i],c=flat[i+1];if(d<cut||d>today+1)continue;const v=pts.get(d);if(!v||c<v.c)pts.set(d,{c})}}
+   if(pts.size){src='f';fb++;if(sh.data.s&&(!start||sh.data.s<start))start=sh.data.s}}
+  if(src&&o.obs&&o.c){const d=hDay(nzYmd(o.obs));if(d>=cut&&d<=today+1&&!pts.has(d))pts.set(d,{c:o.c,t:o.obs})} // the card's price is Baskt's newest observation; only added to a store that has history (else: "no records")
+  const pa=[...pts.entries()].sort((a,b)=>a[0]-b[0]),cs=pa.map(x=>x[1].c);
+  out.push({slot:s,src,pts:pa,cur:cs.length?cs[cs.length-1]:null,min:cs.length?Math.min(...cs):null,max:cs.length?Math.max(...cs):null})}
+ return{series:out,today,start,at,err,cap,fb,more:Math.max(0,all.length-tg.length)}}
+const hObs=x=>x.pts.map(q=>esc(hDate(q[0]))+' '+money(q[1].c)+(q[1].promo?' ('+esc(T('histPromo'))+')':'')).join(' · ');
+function histHtml(p){const hs=histSeries(p),today=hs.today,gm=new Map(); // stores with exactly the same record share one line
+ for(const x of hs.series){const k=x.src+'#'+x.pts.map(q=>q[0]+':'+q[1].c).join(';');const g=x.pts.length?gm.get(k):null;if(g){g.slot={label:g.slot.label+' · '+x.slot.label,d:Math.min(g.slot.d,x.slot.d)};g.n++}else gm.set(x.pts.length?k:'none'+gm.size,{...x,n:1})}
+ const shown=[...gm.values()],plot=shown.filter(x=>x.pts.length);const head='<h4 class="hh">'+esc(T('histTitle'))+'</h4>';
+ const notes=[T('histNoteB',{n:HMAX})];if(hs.at)notes.push(T('histFetched',{t:ago(hs.at)}));if(hs.fb)notes.push(T('histFbNote',{d:hs.start?hDate(hDay(hs.start)):'—'}));
+ if(hs.cap)notes.push(T('histCapNote'));else if(hs.err)notes.push(T('histErrNote'));if(hs.more)notes.push(T('histMore',{n:hs.more}));
+ const note='<p class="mut small hnote">'+notes.map(esc).join(' ')+' '+esc(T('histSrc'))+' <a href="https://www.baskt.nz/" target="_blank" rel="noopener">Baskt (baskt.nz)</a></p>';
+ let ci=0;const col=shown.map(x=>x.pts.length?ci++:-1);
+ const leg='<ul class="hleg">'+shown.map((x,i)=>{const c=col[i];return '<li>'+(c>=0?'<svg class="sw" width="28" height="8" aria-hidden="true"><line x1="0" y1="4" x2="28" y2="4" stroke="'+HCOL[c]+'" stroke-width="3"'+(HDASH[c]?' stroke-dasharray="'+HDASH[c]+'"':'')+'/></svg>':'')+'<b>'+esc(x.slot.label)+'</b>'+(x.n>1?'':' <span class="mut small">'+kmS(x.slot.d)+'</span>')+(x.src==='f'?' <span class="tag fb">'+esc(T('histFb'))+'</span>':'')+'<br><span class="small">'+
+  (x.pts.length?esc(T('histNow'))+' <b>'+money(x.cur)+'</b>'+(x.pts.length>1?' · '+esc(T('histMin'))+' '+money(x.min)+' · '+esc(T('histMax'))+' '+money(x.max):'')+' · '+esc(T('histRange',{n:x.pts.length,a:hDate(x.pts[0][0]),b:hDate(x.pts[x.pts.length-1][0])}))+
+   '</span><details class="hobs"><summary class="small">'+esc(T('histObs'))+'</summary><span class="small">'+hObs(x)+'</span></details>':'<b class="hnone">'+esc(T('histNoRec'))+'</b></span>')+'</li>'}).join('')+'</ul>';
+ if(!plot.length)return head+'<p class="hnone">'+esc(T('histNoRec'))+'</p>'+leg+note;
+ const W=320,H=150,L=44,R=8,TP=10,BT=22;let d0=Math.min(...plot.map(x=>x.pts[0][0])),d1=Math.max(today,...plot.map(x=>x.pts[x.pts.length-1][0]));if(d1-d0<7)d0=d1-7;
+ let c0=Math.min(...plot.map(x=>x.min)),c1=Math.max(...plot.map(x=>x.max));if(c1-c0<20){const m=(c0+c1)/2;c0=m-10;c1=m+10}const pad=(c1-c0)*.08;c0-=pad;c1+=pad;
+ const X=d=>(L+(d-d0)/(d1-d0)*(W-L-R)).toFixed(1),Y=c=>(TP+(c1-c)/(c1-c0)*(H-TP-BT)).toFixed(1);
+ let g='<line x1="'+L+'" y1="'+(H-BT)+'" x2="'+(W-R)+'" y2="'+(H-BT)+'" stroke="#bbb"/><line x1="'+L+'" y1="'+TP+'" x2="'+L+'" y2="'+(H-BT)+'" stroke="#bbb"/>';
+ const lo=Math.min(...plot.map(x=>x.min)),hi=Math.max(...plot.map(x=>x.max));
+ for(const c of lo===hi?[lo]:[lo,hi])g+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+Y(c)+'" y2="'+Y(c)+'" stroke="#e3e3e3"/><text x="'+(L-4)+'" y="'+(+Y(c)+4)+'" text-anchor="end" font-size="11" fill="#333">'+money(c)+'</text>';
+ g+='<text x="'+L+'" y="'+(H-6)+'" font-size="11" fill="#333">'+esc(hDate(d0))+'</text><text x="'+(W-R)+'" y="'+(H-6)+'" font-size="11" fill="#333" text-anchor="end">'+esc(hDate(d1))+'</text>';
+ shown.forEach((x,i)=>{const c=col[i];if(c<0)return;if(x.pts.length>=2){let dd='M'+X(x.pts[0][0])+' '+Y(x.pts[0][1].c);for(let k=1;k<x.pts.length;k++)dd+=' H'+X(x.pts[k][0])+' V'+Y(x.pts[k][1].c); // step line, ends at the last observation
+   g+='<path d="'+dd+'" fill="none" stroke="'+HCOL[c]+'" stroke-width="2.2"'+(HDASH[c]?' stroke-dasharray="'+HDASH[c]+'"':'')+'/>'}
+  g+=x.pts.map(q=>'<circle cx="'+X(q[0])+'" cy="'+Y(q[1].c)+'" r="2.8" fill="'+HCOL[c]+'"><title>'+esc(x.slot.label+': '+hDate(q[0])+' '+money(q[1].c))+'</title></circle>').join('')});
+ const lbl=T('histAria',{name:p.name});
+ return head+'<svg class="hsvg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc(lbl)+'"><title>'+esc(lbl)+'</title>'+g+'</svg>'+leg+note}
+function fillHist(box,G){const els=[...box.querySelectorAll('.histBox')];if(!els.length)return;
+ for(const e of els){const p=G.prods.find(x=>x.key===e.dataset.key);if(!p){e.remove();continue}
+  const tg=histTargets(p).slice(0,HMAX),bs=tg.map(o=>loadB(String(o.item.id),o.slot.loc));
+  const draw=()=>{if(!e.isConnected)return;e.innerHTML='<section class="hist" aria-live="polite">'+histHtml(p)+'</section>'};
+  const step2=()=>{const ks=[...new Set(tg.filter((o,i)=>bs[i].st!=='ok').map(o=>hShard(o.item.id)))]; // fallback shards only where Baskt gave nothing
+   ks.forEach(loadHist);if(ks.every(k=>HSH.get(k).data))draw();else Promise.all(ks.map(k=>HSH.get(k).p)).then(draw)};
+  if(bs.every(b=>b.st))step2();else{e.innerHTML='<p class="mut small"><span class="spin" aria-hidden="true"></span>'+esc(T('histLoading'))+'</p>';Promise.all(bs.map(b=>b.p)).then(step2)}}}
+function toggleHist(b,G){const k=b.dataset.key,art=b.closest('.prod');if(!art)return;
+ if(histOpen.has(k)){histOpen.delete(k);const e=art.querySelector('.histBox');if(e)e.remove();b.setAttribute('aria-expanded','false');return}
+ histOpen.add(k);b.setAttribute('aria-expanded','true');const e=document.createElement('div');e.className='histBox';e.dataset.key=k;art.querySelector('.chooserBox').before(e);fillHist(art,G)}
 // ---- search UI state ----
 let view={run:null,type:'all',cmp:null,shown:{}};const openCards=new Set();
-function bindCards(box,G){fillPhotos(box,G);box.querySelectorAll('.more').forEach(b=>b.onclick=()=>{const k=b.dataset.key;openCards.has(k)?openCards.delete(k):openCards.add(k);renderResults()});
+function bindCards(box,G){fillPhotos(box,G);fillHist(box,G);
+ box.querySelectorAll('.hbtn').forEach(b=>b.onclick=()=>toggleHist(b,G));
+ box.querySelectorAll('.prod .pn h3').forEach(h=>h.onclick=()=>{const b=h.closest('.prod').querySelector('.hbtn');if(b)toggleHist(b,G)}); // v1.4.0: tap the product name = open/close its price history
+box.querySelectorAll('.more').forEach(b=>b.onclick=()=>{const k=b.dataset.key;openCards.has(k)?openCards.delete(k):openCards.add(k);renderResults()});
  box.querySelectorAll('.add').forEach(b=>b.onclick=()=>{const p=G.prods.find(x=>x.key===b.dataset.key);if(p)addFlow(p,b)});
  [...box.querySelectorAll('[data-cat]'),...document.querySelectorAll('#cats [data-cat]')].forEach(b=>b.onclick=()=>{view.type=b.dataset.cat;renderResults();$('#cats').scrollIntoView({block:'nearest'})});
  box.querySelectorAll('[data-bexp]').forEach(b=>b.onclick=()=>{view.shown[b.dataset.bexp]=1;renderResults()});
@@ -456,7 +528,7 @@ function doSearch(){const q=qIn.value.trim();if(!q)return;sugClose();openCards.c
 $('#sForm').onsubmit=e=>{e.preventDefault();doSearch()}; // Enter on the phone keyboard = view all
 $('#sortP').onclick=()=>{sortMode='price';$('#sortP').setAttribute('aria-pressed',true);$('#sortU').setAttribute('aria-pressed',false);renderResults()};
 $('#sortU').onclick=()=>{sortMode='unit';$('#sortU').setAttribute('aria-pressed',true);$('#sortP').setAttribute('aria-pressed',false);renderResults()};
-window.NZG_TEST={NET,RUNS,RC,INFL,get view(){return view},groupRun,priceSlots,get sel(){return sel},get PLACES(){return PLACES},pqSearch,get ALIAS(){return ALIAS}};
+window.NZG_TEST={NET,RUNS,RC,INFL,histSeries,HSH,HB,histTargets,get view(){return view},groupRun,priceSlots,get sel(){return sel},get PLACES(){return PLACES},pqSearch,get ALIAS(){return ALIAS}};
 function offerHtml(p,o,best){const s=o.slot;
  return '<div class="pl'+(best?' best':'')+'" data-loc="'+esc(s.loc)+'" data-cents="'+o.c+'"><div class="who"><b>'+esc(s.label)+'</b> <span class="mut small">'+kmS(s.d)+'</span>'+
  (s.zone?'<div class="mut small">'+esc(T('nearestBranch',{store:s.store.name,d:kmS(s.d)}))+'</div>':'')+
