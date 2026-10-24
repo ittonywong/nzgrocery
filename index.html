@@ -63,7 +63,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:.45rem .3rem;border-top:
 .pickl{list-style:none;margin:.3rem 0 0;padding:0;max-height:60vh;overflow:auto}.pickl li{border-top:1px solid var(--line)}.pickl li:first-child{border-top:0}
 .pickl button{width:100%;display:flex;justify-content:space-between;gap:.5rem;align-items:center;text-align:left;background:#fff;border:0;border-radius:0;color:var(--tx);padding:.3rem .5rem}
 .pickl button[aria-current=true]{background:#e8f5e9;font-weight:bold}.pickl .c{color:var(--mut);font-size:.85rem;white-space:nowrap}.pickl .alt{color:var(--mut);font-size:.8rem;display:block;font-weight:normal}
-.rg{font-size:.85rem;color:#2f4f2f;margin:.1rem 0}.seg button{padding:0 .75rem}
+.rg{font-size:.85rem;color:#2f4f2f;margin:.1rem 0}.cam .row{gap:.4rem;flex-wrap:wrap}#camBox:empty{display:none}#camBox{display:flex;gap:.6rem;align-items:flex-start;margin-top:.5rem}.camPrev{width:88px;height:88px;object-fit:cover;border-radius:8px;border:1px solid var(--line);flex:0 0 auto}#camBox .chips{margin:.3rem 0}#camBox .chips button{min-height:44px}#camBox .pc{color:var(--mut);font-size:.8rem;margin-left:.3rem}#camBox [aria-pressed=true] .pc{color:inherit;opacity:.9}.camProg{width:100%;height:8px}.seg button{padding:0 .75rem}
 .pqw{position:relative}.pqbox{position:relative;display:flex}.pqbox .q{flex:1 1 auto;padding-right:2.8rem}
 .pqx{position:absolute;right:0;top:0;background:transparent;border:0;color:var(--mut);font-size:1.4rem;line-height:1}
 .pqdrop{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;background:#fff;border:2px solid var(--g);border-radius:10px;max-height:60vh;overflow:auto;box-shadow:0 6px 18px rgba(0,0,0,.18)}
@@ -142,6 +142,7 @@ button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{ou
  <form class="panel" id="sForm" role="search"><div class="row sbox"><label class="sr" for="q" data-tr="sGo">搜尋</label><input class="q" id="q" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" data-ip="sPh"><button class="pri" data-tr="sGo">搜尋</button>
   <ul id="sug" role="listbox" hidden data-ar="sugLabel" aria-label="搜尋建議"></ul></div>
   <p class="mut small" data-tr="sHint" style="margin:.3rem 0 0"></p></form>
+ <div class="panel cam" id="camPanel"><div class="row"><button type="button" class="sec" id="camBtn" data-tr="camBtn"></button><button type="button" class="sec" id="galBtn" data-tr="camGal"></button><input type="file" id="camIn" accept="image/*" capture="environment" hidden><input type="file" id="galIn" accept="image/*" hidden></div><p class="mut small" data-tr="camNote" style="margin:.3rem 0 0"></p><div id="camBox" role="status" aria-live="polite"></div></div>
  <div class="chips cats" id="cats" role="group"></div>
  <div class="row" style="margin:.3rem 0"><span data-tr="sortBy">排序</span><div class="seg" role="group"><button id="sortP" aria-pressed="true" data-tr="sortPrice"></button><button id="sortU" aria-pressed="false" data-tr="sortUnit"></button></div></div>
  <p class="mut small" data-tr="cnNote"></p>

@@ -1,7 +1,7 @@
 'use strict';
 // ===== config =====
 const PROXY="https://nzgrocery-proxy.ytonywong.workers.dev";
-const VERSION="1.5.0 (2026-10-23)";
+const VERSION="1.6.0 (2026-10-24)";
 const CHAIN_NAME={"paknsave":"PAK'nSAVE","new-world":"New World","countdown":"Woolworths","farro":"Farro","other":""};
 const SEARCH_CHAINS=["paknsave","new-world","countdown","farro"];
 const $=s=>document.querySelector(s);
@@ -207,20 +207,31 @@ function renderStores(){
 const LIMIT=100;
 const RC=new Map(); // client cache: url -> {at, data}  (30 min) — repeat keystrokes/searches cost 0 requests
 const INFL=new Map(); // in-flight: url -> {p, ctl, refs}  (same request never sent twice at once)
-const NET={sent:0,cached:0,aborted:0,log:[]}; // exposed for tests
+const NET={sent:0,cached:0,aborted:0,retries:0,log:[]}; // exposed for tests
 function reqUrl(path,params){const u=new URL(PROXY+path);for(const[k,v]of Object.entries(params))u.searchParams.set(k,v);return u.toString()}
+// v1.6.0: Baskt is sometimes slow (5–13 s) or answers 5xx for a new word. The phone now retries a failed request by itself
+// (max 2 more tries, waits 3 s then 7 s, or the Retry-After the proxy gives, max 12 s) before it shows "busy".
+const sleep=(ms,sig)=>new Promise((ok,no)=>{const h=setTimeout(ok,ms);if(sig)sig.addEventListener('abort',()=>{clearTimeout(h);no(new DOMException('aborted','AbortError'))},{once:true})});
+async function fetchRetry(url,ctl){let last=null;
+ for(let a=0;a<3;a++){
+  if(a){const ra=last&&last.ra;await sleep(Math.min(12,Math.max(2,ra||(a===1?3:7)))*1000,ctl.signal);NET.retries++;NET.log.push('retry '+url)}
+  let r;try{r=await fetch(url,{mode:'cors',credentials:'omit',referrerPolicy:'no-referrer',signal:ctl.signal})}
+  catch(e){if(e.name==='AbortError')throw e;last={msg:T('errBusy'),ra:0};continue}
+  if(r.ok)return r;
+  if(r.status===502||r.status===503||r.status===504){const ra=parseInt(r.headers.get('Retry-After')||'',10);last={msg:T('errBusy'),ra:Number.isFinite(ra)?ra:0};if(last.ra>20)break;continue}
+  if(r.status===429)throw new Error(T('errBusy'));throw new Error('HTTP '+r.status)}
+ throw new Error(last?last.msg:T('errBusy'))}
 function getJSON(url,run){const c=RC.get(url);if(c&&Date.now()-c.at<1800000){NET.cached++;return Promise.resolve(c.data)}
  let f=INFL.get(url);
  if(!f){const ctl=new AbortController();NET.sent++;NET.log.push(url);
-  f={ctl,refs:0,p:fetch(url,{mode:'cors',credentials:'omit',referrerPolicy:'no-referrer',signal:ctl.signal}).then(async r=>{
-    if(r.status===429||r.status===503)throw new Error(T('errBusy'));if(!r.ok)throw new Error('HTTP '+r.status);
+  f={ctl,refs:0,p:fetchRetry(url,ctl).then(async r=>{
     const data={json:await r.json(),fetchedAt:r.headers.get('X-Fetched-At'),cache:r.headers.get('X-Cache')};RC.set(url,{at:Date.now(),data});return data}).finally(()=>INFL.delete(url))};
   INFL.set(url,f)}
  f.refs++;run.reqs.add(url);return f.p}
 function releaseRun(run){for(const u of run.reqs){const f=INFL.get(u);if(f&&--f.refs<=0){f.ctl.abort();INFL.delete(u);NET.aborted++}}run.reqs.clear()}
 const RUNS=new Map(); // plan.key -> run (shared by suggestions and full results)
-function startRun(pl){const key=(sel.city||'akl')+'|'+pl.key;let run=RUNS.get(key);if(run&&!run.cancelled)return run;
- run={pl,key,loc:LOCIDS(),items:new Map(),prices:{},total:0,done:0,errs:[],fetchedAt:null,reqs:new Set(),more:{},subs:new Set(),cancelled:false,finished:false};RUNS.set(key,run);
+function startRun(pl){const key=(sel.city||'akl')+'|'+pl.key;let run=RUNS.get(key);if(run&&!run.cancelled&&!(run.finished&&run.errs.length))return run; // v1.6.0: a run that had failures is started again (successful parts come from the 30-min phone cache, 0 requests)
+ run={pl,key,loc:LOCIDS(),items:new Map(),prices:{},total:0,done:0,errs:[],failedChains:new Set(),fetchedAt:null,reqs:new Set(),more:{},subs:new Set(),cancelled:false,finished:false};RUNS.set(key,run);
  run.promise=execRun(run);return run}
 function cancelRun(run){if(!run||run.finished)return;run.cancelled=true;releaseRun(run);RUNS.delete(run.key)}
 function ingestRun(run,chain,json,words,size){const d=json.data||{};const locSet=new Set(run.loc[chain]||[]);const got=[];
@@ -232,10 +243,10 @@ async function q1(run,chain,q,offset){if(run.cancelled)return null;const params=
  run.total++;notify(run);
  try{const r=await getJSON(reqUrl('/api/v1/items',params),run);if(run.cancelled)return null;
   if(r.fetchedAt&&(!run.fetchedAt||r.fetchedAt<run.fetchedAt))run.fetchedAt=r.fetchedAt;return r.json}
- catch(e){if(!run.cancelled&&e.name!=='AbortError')run.errs.push(e.message);return null}
+ catch(e){if(!run.cancelled&&e.name!=='AbortError'){run.errs.push(e.message);run.failedChains.add(chain)}return null}
  finally{run.done++;notify(run)}}
 async function execRun(run){const pl=run.pl;const chains=SEARCH_CHAINS.filter(c=>run.loc[c]);
- const extra=pl.rawExtra?pl.extra.map(x=>({bq:x,words:pl.words,size:null})):pl.extra.map(x=>NZS.resolve(x,'en')).filter(Boolean); // alias extras (L&P: "paeroa") are sent as typed and matched against the alias
+ const extra=pl.rawExtra?pl.extra.map(x=>({bq:x,words:pl.words,size:null})):pl.extra.map(x=>NZS.resolve(x,'raw')).filter(Boolean); // alias extras (L&P: "paeroa") are sent as typed and matched against the alias
  // wave 1: the phrase (+ size) per chain, the concept's extra phrases, and for 2+ words the main word
  const w1=[];for(const c of chains){const seen=new Set();const add=(q,words,size,tag)=>{if(!q||q.length<2||seen.has(q))return;seen.add(q);w1.push({c,q,words,size,tag})};
   add(NZS.chainQ(c,pl.bq||pl.phrase,pl.size),pl.words,pl.size,'main');
@@ -284,17 +295,18 @@ function groupRun(run){const slots=priceSlots();const prods=NZS.build([...run.it
 // product (search.js POPULAR), then brands with more matching products sold at more stores; "Other" (no brand) last.
 let BK=null;
 function brandKey(b){const n=NZS.norm(b);if(!n)return'';BK=BK||[...NZS.brandSet().keys()].sort((a,b)=>b.length-a.length);for(let i=BK.length-1;i>=0;i--){const k=BK[i];if(n===k||n.startsWith(k+' '))return k}return n} // shortest known brand prefix: Tip Top Super Soft / Tip Top Fruju -> Tip Top; Ploughmans Bakery -> Ploughmans
-function brandGroups(prods,pl,own,sk){const m=new Map();
+function brandGroups(prods,pl,own,sk){const m=new Map();const fresh=!!(NZS.PRODUCE&&pl&&pl.words&&NZS.PRODUCE.has(pl.words.join(' ')));const lz=p=>(p.size==='kg'||p.size==='ea')?0:1;
  for(const p of prods){const k=brandKey(p.brand);let g=m.get(k);if(!g)m.set(k,g={key:'b:'+(k||'-'),label:'',names:{},prods:[],hit:false,pop:-1,score:0,own:0,other:!k});
   g.prods.push(p);if(p.brand)g.names[p.brand]=(g.names[p.brand]||0)+1;if(p.hit)g.hit=true;if(p.pop>=0&&(g.pop<0||p.pop<g.pop))g.pop=p.pop;
   if(p.type===own)g.own++;g.score+=(p.type===own?2:1)*Math.min(p.of.length,30)}
  for(const g of m.values()){const nm=Object.keys(g.names).sort((a,b)=>a.length-b.length||(g.names[b]-g.names[a]));
   g.label=g.other?'':(NZS.brandSet().get(g.key.slice(2))||nm[0]||'');   // known-brand label, else the shortest name seen
-  g.prods.sort((a,b)=>sk(a)-sk(b))} // v1.3.3: inside a brand group strictly cheapest -> most expensive
+  g.prods.sort(fresh?(a,b)=>((a.type!==own)-(b.type!==own))||(lz(a)-lz(b))||sk(a)-sk(b):(a,b)=>sk(a)-sk(b))} // v1.3.3: inside a brand group strictly cheapest -> most expensive
+ // v1.6.0: for a fresh fruit/veg word, the fresh item itself (loose per kg / each first) leads each group, then cheapest
  const pr=g=>g.pop<0?1:0; // well-known brands for the product come first, then by how many matching products/stores
  // relevance: 1) the brand typed  2) groups that hold the searched product itself (bread brands before a pickle brand;
  // loose apples with no brand before apple-juice brands)  3) well-known brands  4) more matching products × stores  5) "Other" last on ties
- return[...m.values()].sort((a,b)=>b.hit-a.hit||(b.own>0)-(a.own>0)||pr(a)-pr(b)||b.score-a.score||a.other-b.other||sk(a.prods[0])-sk(b.prods[0]))}
+ return[...m.values()].sort((a,b)=>b.hit-a.hit||(b.own>0)-(a.own>0)||(fresh?b.own-a.own:0)||pr(a)-pr(b)||b.score-a.score||a.other-b.other||sk(a.prods[0])-sk(b.prods[0]))}
 // ---- display helpers ----
 const ICON={fruit:'M12 7c-3-2-7 0-7 5s3 9 5 9c1 0 1.5-.5 2-.5s1 .5 2 .5c2 0 5-4 5-9s-4-7-7-5zm0 0c0-2 1-4 3-5',veg:'M7 21l10-10M14 4c3 0 6 3 6 6l-6 6-6-6c0-3 3-6 6-6z',
  drinks:'M7 3h10l-1.5 18h-7zM7 8h10',tea:'M4 9h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5zM17 10h2a2 2 0 0 1 0 4h-2M8 3v3M12 3v3',coffee:'M4 9h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5zM17 10h2a2 2 0 0 1 0 4h-2',
@@ -421,17 +433,17 @@ box.querySelectorAll('.more').forEach(b=>b.onclick=()=>{const k=b.dataset.key;op
  box.querySelectorAll('[data-bmore]').forEach(b=>b.onclick=()=>{view.shown._b=(view.shown._b||10)+10;renderResults()});
  box.querySelectorAll('[data-showmore]').forEach(b=>b.onclick=()=>{view.shown[b.dataset.showmore]=(view.shown[b.dataset.showmore]||40)+40;renderResults()})}
 function statusLine(run,G){const pl=run.pl;let h='';
- if(run.errs.length)h+='<div class="err">'+esc(T('partialErr',{n:run.errs.length}))+'</div>';
+ if(run.errs.length&&run.finished)h+='<div class="err">'+esc(run.items.size?T('partialChains',{chains:[...run.failedChains].map(c=>CHAIN_NAME[c]||c).join(', ')}):T('allFailed'))+' <button type="button" class="sec" id="retryBtn">'+esc(T('retryBtn'))+'</button></div>';
  if(!run.finished)h+='<div class="loading" aria-busy="true"><span class="spin" aria-hidden="true"></span>'+esc(T('loadingN',{a:run.done,b:run.total}))+'</div>';
  if(run.mapped)h+='<div class="mut small">'+esc(T('mapped',{en:pl.phrase+(pl.size?' '+pl.size:'')}))+'</div>';
  if(G.prods.length)h+='<b>'+esc(T('resSummary',{q:run.q,n:G.prods.length,m:G.types.length}))+'</b>'+(run.fetchedAt?' <span class="mut small">· '+esc(T('fetchedAt',{t:fmtT(run.fetchedAt)}))+'</span>':'');
- else if(run.finished)h+='<p class="panel nores">'+esc(run.errs.length&&!run.items.size?T('err',{msg:run.errs[0]}):T('sNoneFriendly',{q:run.q}))+'</p>';
+ else if(run.finished&&!run.errs.length)h+='<p class="panel nores">'+esc(T('sNoneFriendly',{q:run.q}))+'</p>';
  if(here&&(G.prods.length||run.finished))h+='<div class="mut small scope">'+esc(T('cmpScope',{place:mode==='gps'?T('youHere'):sel.place,r:radius,n:priceSlots().length}))+'</div>';
  return h}
 function renderResults(){const box=$('#results'),run=view.run;$('#cats').innerHTML='';
  if(!run){box.innerHTML='';$('#sSt').innerHTML=view.msg||'';$('#moreWrap').innerHTML='';return}
  if(!here){$('#sSt').innerHTML='<span class="err">'+esc(T('needLoc'))+'</span>';box.innerHTML='';return}
- const G=groupRun(run);const words=run.pl.words;$('#sSt').innerHTML=statusLine(run,G);
+ const G=groupRun(run);const words=run.pl.words;$('#sSt').innerHTML=statusLine(run,G);const rb=$('#retryBtn');if(rb)rb.onclick=()=>retrySearch(run);
  if(view.cmp){renderCmp(G,words);return}
  if(view.type!=='all'&&!G.types.some(t=>t.type===view.type))view.type='all';
  if(G.types.length)$('#cats').innerHTML='<span class="sr">'+esc(T('typesLabel'))+'</span><button data-cat="all" aria-pressed="'+(view.type==='all')+'">'+esc(T('catAll'))+' <span class="n">'+G.prods.length+'</span></button>'+
@@ -462,6 +474,8 @@ function renderCmp(G,words){const p=G.prods.find(x=>x.key===view.cmp);const box=
   prodCard(p,true,words)+(others.length?'<h3 class="gh">'+esc(T('sameGroup'))+'</h3>'+others.map(x=>prodCard(x,openCards.has(x.key),words)).join(''):'')+'</section>';
  $('#cmpBack').onclick=closeCmp;bindCards(box,G);$('#cmpBack').focus({preventScroll:true})}
 function closeCmp(){view.cmp=null;renderResults()}
+// v1.6.0: "Try again" re-asks only the requests that failed (the others are answered from the phone cache)
+function retrySearch(run){const q=run.q;if(RUNS.get(run.key)===run)RUNS.delete(run.key);const r2=openRun(q,{type:view.type});if(r2)r2.q=q}
 function openRun(text,opts){opts=opts||{};const r=NZS.resolve(text,LANG);const pl=NZS.plan(r);
  if(!pl){if(view.run)view.run.subs.delete(renderResults);view.run=null;view.msg=r&&r.unknown.length?'<p class="panel nores">'+esc(T('unknownWord',{w:r.unknown.join(' ')}))+'</p>':'';renderResults();return null}
  const run=startRun(pl);run.q=text;run.mapped=r.mapped||(r.words.join(' ')!==r.text.replace(/\s+/g,' ')&&!r.size);
@@ -526,6 +540,24 @@ function doSearch(){const q=qIn.value.trim();if(!q)return;sugClose();openCards.c
  // reuse the suggestion run when it is for this text (0 extra requests)
  const run=openRun(sugRun&&sugRun.q===q?sugRun.pl.phrase+(sugRun.pl.size?' '+sugRun.pl.size:''):q);if(run){run.q=q}}
 $('#sForm').onsubmit=e=>{e.preventDefault();doSearch()}; // Enter on the phone keyboard = view all
+// ===== v1.6.0 photo → food guess: recognised on the phone (photo/photo.js, loaded only after 📷 is tapped) =====
+let photoP=null,camUrl=null;const camBox=$('#camBox');
+function photoLib(){if(!photoP)photoP=new Promise((ok,no)=>{if(window.NZGPhoto)return ok(window.NZGPhoto);const s=document.createElement('script');s.src='photo/photo.js?v=1.6.0';
+ s.onload=()=>window.NZGPhoto?ok(window.NZGPhoto):no(new Error('photo'));s.onerror=()=>no(new Error('photo.js'));document.head.appendChild(s)});photoP.catch(()=>{photoP=null});return photoP}
+function camProg(p){const e=$('#camSt');if(e)e.textContent=p>=1?T('camThinking'):T('camLoading',{p:Math.round(p*100)});const b=$('#camBar');if(b)b.value=p}
+function camPick(inp){inp.value='';inp.click();photoLib().then(P=>P.init(camProg)).catch(()=>{})} // start the one-time download while the camera is open
+$('#camBtn').onclick=()=>camPick($('#camIn'));$('#galBtn').onclick=()=>camPick($('#galIn'));
+const camName=o=>LANG==='zh-Hant'?o.zh+' '+o.en:LANG==='zh-Hans'?o.zs+' '+o.en:o.en;
+async function camFile(f){if(!f)return;if(camUrl)URL.revokeObjectURL(camUrl);camUrl=URL.createObjectURL(f);const img='<img class="camPrev" alt="" src="'+camUrl+'">';
+ camBox.innerHTML=img+'<div style="flex:1"><span class="small" id="camSt">'+esc(T('camThinking'))+'</span><progress class="camProg" id="camBar" max="1" value="0"></progress></div>';
+ try{const P=await photoLib();const r=await P.classify(f,camProg);NZG_TEST.lastPhoto=r;
+  camBox.innerHTML=img+'<div style="flex:1;min-width:0"><b class="small">'+esc(T('camGuess'))+'</b><div class="chips" id="camChips">'+
+   r.top.map(o=>'<button type="button" data-q="'+esc(o.q)+'">'+esc(camName(o))+'<span class="pc">'+(o.p<0.01?'&lt;1':Math.round(o.p*100))+'%</span></button>').join('')+'</div>'+
+   (r.top[0].p<0.3?'<p class="small" style="margin:0;color:var(--warn)">'+esc(T('camUnsure'))+'</p>':'')+
+   '<p class="mut small" style="margin:.1rem 0 0">'+esc(T('camFix'))+' · '+esc(T('camTime',{s:(r.ms/1000).toFixed(1)}))+'</p></div>';
+  camBox.querySelectorAll('#camChips button').forEach(b=>b.onclick=()=>{camBox.querySelectorAll('#camChips button').forEach(x=>x.setAttribute('aria-pressed',x===b));qIn.value=b.dataset.q;doSearch();$('#sSt').scrollIntoView({block:'start',behavior:'smooth'})});
+ }catch(e){console.warn(e);camBox.innerHTML=img+'<p class="small" style="flex:1;color:var(--warn)">'+esc(T('camErr'))+'</p>'}}
+$('#camIn').onchange=e=>camFile(e.target.files[0]);$('#galIn').onchange=e=>camFile(e.target.files[0]);
 $('#sortP').onclick=()=>{sortMode='price';$('#sortP').setAttribute('aria-pressed',true);$('#sortU').setAttribute('aria-pressed',false);renderResults()};
 $('#sortU').onclick=()=>{sortMode='unit';$('#sortU').setAttribute('aria-pressed',true);$('#sortP').setAttribute('aria-pressed',false);renderResults()};
 window.NZG_TEST={NET,RUNS,RC,INFL,histSeries,HSH,HB,histTargets,get view(){return view},groupRun,priceSlots,get sel(){return sel},get PLACES(){return PLACES},pqSearch,get ALIAS(){return ALIAS}};

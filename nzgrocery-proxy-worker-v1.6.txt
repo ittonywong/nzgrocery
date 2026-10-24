@@ -1,0 +1,304 @@
+/**
+ * nzgrocery-proxy — Cloudflare Worker (paste-in, single file, no build step)
+ * Read-only cache/proxy in front of Baskt's public API (https://www.baskt.nz/developers).
+ *
+ * - Only GET, only whitelisted Baskt paths and query parameters.
+ * - CORS: only https://ittonywong.github.io may call it from a browser.
+ * - Caches every answer for 6 hours, keeps a stale copy for 48 hours and serves it
+ *   if Baskt is slow, down, or rate-limits us. Three cache layers:
+ *     1. memory of this Worker instance (always on),
+ *     2. Cloudflare Cache API (works on custom domains; may be a no-op on *.workers.dev),
+ *     3. optional Workers KV — bind a KV namespace with variable name NZG_KV
+ *        (recommended: makes the cache shared and reliable on workers.dev).
+ * - Rate limits: each visitor IP max 60 requests/minute here; this Worker sends
+ *   Baskt at most 30 requests/minute (per Worker instance) and backs off when
+ *   Baskt answers 429 / 5xx. No IP rotation, no bulk crawling.
+ * - The Worker never receives the user's location (the app filters stores on the phone).
+ * - v1.1 (2026-10-19): /api/v1/items accepts limit up to 100 (Baskt's max; was 25) and offset up to 500;
+ *   per-IP limit 60 -> 90 requests/minute and Baskt calls 20 -> 30/minute per instance (one new smart search
+ *   = up to ~11 Baskt calls, then cached 6 h for everyone). Nothing else changed.
+ * - v1.5 (2026-10-23): new read-only path /api/v1/items/history (price history of ONE item at ONE store,
+ *   at most ~100 days back, at most 100 rows). Only asked when a visitor opens a product's price chart.
+ *   History answers are cached 12 hours in the free Cloudflare Cache (never in KV), stale copy kept 48 hours.
+ *   Daily cap: at most HISTORY_DAILY_CAP (2,000) history calls to Baskt per UTC day. Counted in this
+ *   instance's memory and in the Cloudflare Cache of this data centre (free; no KV/D1 writes), so the cap is
+ *   approximate. When reached: cached/stale copy if there is one, else 503 "daily_cap" until 00:00 UTC.
+ *   Nothing about visitors is stored. Still free plan only, no new secrets, no new bindings.
+ * - v1.6 (2026-10-24): fixes "search does nothing / cabbage fails". Baskt often needs 5-13 s for a new
+ *   (uncached) search; v1.5 gave up after 12 s and then paused ALL new searches for 30-60 s (global backoff),
+ *   so one slow word made every other new word fail. Now: wait up to 25 s; a quick 5xx is retried once after
+ *   1 s; one slow/failed call only blocks the SAME query for 6 s (Retry-After 6, then the app retries);
+ *   the global pause is used only when Baskt says 429 (rate limit) or after 4+ failures within 60 s (20 s).
+ *   Identical queries arriving at the same time share ONE Baskt call. Same paths, limits, cache and CORS.
+ * - Baskt needs no key today. If one is ever required, add a Secret named
+ *   BASKT_API_KEY in Cloudflare; it is sent as the "x-api-key" header and never shown to browsers.
+ */
+const ALLOWED_ORIGINS = ["https://ittonywong.github.io"];
+const UPSTREAM = "https://www.baskt.nz";
+const USER_AGENT = "nzgrocery-proxy/1.6 (personal, non-commercial; +https://ittonywong.github.io/nzgrocery/)";
+const FRESH_SECONDS = 6 * 3600;        // serve from cache without asking Baskt
+const STALE_SECONDS = 48 * 3600;       // keep a copy this long as a fallback
+const CLIENT_LIMIT_PER_MIN = 90;       // per visitor IP (v1.1: one new search = up to ~14 requests incl. live suggestions)
+const UPSTREAM_LIMIT_PER_MIN = 30;     // to Baskt, per Worker instance (v1.1: was 20; one new smart search = up to ~11 calls)
+const UPSTREAM_TIMEOUT_MS = 25000;       // v1.6: was 12000 (Baskt often takes 5-13 s for a new search)
+const RETRY_FAST_5XX_MS = 10000;        // v1.6: retry a 5xx once, only if the first answer came back within 10 s
+const NEG_SECONDS = 6;                  // v1.6: after a failure, the SAME query is not re-sent to Baskt for 6 s
+const FAIL_WINDOW_MS = 60000, FAIL_TRIP = 4, FAIL_BACKOFF_MS = 20000; // v1.6: global pause only after 4+ failures in 60 s
+const HISTORY_PATH = "/api/v1/items/history";
+const HISTORY_FRESH_SECONDS = 12 * 3600;  // v1.5: history answers are reused for 12 hours
+const HISTORY_DAILY_CAP = 2000;            // v1.5: max Baskt history calls per UTC day (approximate, see above)
+const HISTORY_MAX_DAYS = 100;              // v1.5: "from" may go back at most this many days
+
+const ymdUTC = t => new Date(t).toISOString().slice(0, 10);
+function validFrom(v) {                    // YYYY-MM-DD, a real date, not in the future, not older than HISTORY_MAX_DAYS
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const t = Date.parse(v + "T00:00:00Z");
+  if (!Number.isFinite(t) || ymdUTC(t) !== v) return false;
+  const now = Date.now();
+  return t <= now + 86400000 && t >= now - (HISTORY_MAX_DAYS + 1) * 86400000;
+}
+
+// path -> allowed query params and validators
+const ID_LIST = /^\d{1,6}(,\d{1,6}){0,59}$/;
+const RULES = {
+  "/api/v1/items": {
+    q: v => v.length >= 2 && v.length <= 60,
+    chain: v => /^[a-z0-9-]{2,30}$/.test(v),
+    locationId: v => ID_LIST.test(v),
+    limit: v => /^\d{1,3}$/.test(v) && +v >= 1 && +v <= 100,   // v1.1: Baskt's own maximum is 100 per call
+    offset: v => /^\d{1,3}$/.test(v) && +v <= 500,
+  },
+  "/api/v1/items/comparison": {
+    itemId: v => /^\d{1,12}$/.test(v),
+    limit: v => /^\d{1,2}$/.test(v) && +v >= 1 && +v <= 50,
+  },
+  "/api/v1/items/history": {               // v1.5: one item, ONE store (no lists), bounded date, <=100 rows
+    itemId: v => /^\d{1,12}$/.test(v),
+    locationId: v => /^\d{1,6}$/.test(v),
+    from: validFrom,
+    limit: v => /^\d{1,3}$/.test(v) && +v >= 1 && +v <= 100,
+  },
+  "/api/v1/locations": {
+    chain: v => /^[a-z0-9-]{2,30}$/.test(v),
+    limit: v => /^\d{1,3}$/.test(v) && +v >= 1 && +v <= 250,
+    offset: v => /^\d{1,3}$/.test(v) && +v <= 500,
+  },
+  "/api/v1/coverage": {
+    chain: v => /^[a-z0-9-]{2,30}$/.test(v),
+    limit: v => /^\d{1,2}$/.test(v) && +v >= 1 && +v <= 50,
+  },
+};
+const REQUIRED = { "/api/v1/items": ["q"], "/api/v1/items/comparison": ["itemId"], "/api/v1/items/history": ["itemId", "locationId", "from"] };
+
+// ---- in-memory state (per Worker instance) ----
+const clientHits = new Map();   // ip -> [timestamps]
+let upstreamHits = [];          // timestamps
+let backoffUntil = 0;           // ms epoch (v1.6: set only by 429 or by FAIL_TRIP failures in FAIL_WINDOW_MS)
+let failTimes = [];             // v1.6: timestamps of recent upstream failures
+const negCache = new Map();     // v1.6: keyPath -> until (ms) — recent failure of THIS query
+const inflight = new Map();     // v1.6: keyPath -> Promise<{ok, body?, fetchedAt?, status?, why?}> (coalescing)
+const memCache = new Map();     // key -> {body, fetchedAt}
+const MEM_MAX = 150;   // v1.5: was 80 (history answers are small, one item at one store)
+const stats = { started: null, upstreamCalls: 0, cacheHits: 0, staleServed: 0, rejected: 0, historyCalls: 0, historyCapped: 0 };
+const histDay = { day: "", count: 0 };    // v1.5: history calls today (this instance)
+
+const historyCap = env => Math.max(0, Math.min(HISTORY_DAILY_CAP, parseInt((env && env.HISTORY_DAILY_CAP) || HISTORY_DAILY_CAP, 10) || HISTORY_DAILY_CAP)); // optional plain variable may only LOWER the cap
+// v1.5: take one unit of today's history allowance. Count = max(this instance, this data centre's cached counter).
+async function historyAllowance(env, ctx, now) {
+  const cap = historyCap(env);
+  const day = ymdUTC(now);
+  if (histDay.day !== day) { histDay.day = day; histDay.count = 0; }
+  const key = new Request("https://nzgrocery-cache.internal/__cap/history/" + day);
+  let shared = 0;
+  try { const c = await caches.default.match(key); if (c) shared = parseInt(await c.text(), 10) || 0; } catch (e) {}
+  const used = Math.max(histDay.count, shared);
+  if (used >= cap) return { ok: false, used, cap };
+  histDay.count = used + 1;
+  try { ctx.waitUntil(caches.default.put(key, new Response(String(histDay.count), { headers: { "Cache-Control": "public, max-age=172800" } })).catch(() => {})); } catch (e) {}
+  return { ok: true, used: histDay.count, cap };
+}
+const secondsToUtcMidnight = now => Math.max(60, Math.ceil((Date.parse(ymdUTC(now) + "T00:00:00Z") + 86400000 - now) / 1000));
+
+function corsHeaders(origin) {
+  const h = { "Vary": "Origin", "X-Content-Type-Options": "nosniff" };
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    h["Access-Control-Allow-Origin"] = origin;
+    h["Access-Control-Allow-Methods"] = "GET, OPTIONS";
+    h["Access-Control-Allow-Headers"] = "Content-Type";
+    h["Access-Control-Expose-Headers"] = "X-Cache, X-Fetched-At, Retry-After";
+    h["Access-Control-Max-Age"] = "86400";
+  }
+  return h;
+}
+function json(obj, status, origin, extra = {}) {
+  return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...corsHeaders(origin), ...extra } });
+}
+function memPut(k, v) {
+  memCache.delete(k); memCache.set(k, v);
+  while (memCache.size > MEM_MAX) memCache.delete(memCache.keys().next().value);
+}
+function allow(list, limit, now) {
+  while (list.length && now - list[0] > 60000) list.shift();
+  if (list.length >= limit) return false;
+  list.push(now); return true;
+}
+
+// v1.6: one Baskt call (+ one quick retry when a 5xx comes back fast). Never throws.
+async function callUpstream(upstreamUrl, headers) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const t0 = Date.now();
+    let res;
+    try {
+      stats.upstreamCalls++;
+      res = await fetch(upstreamUrl, { headers, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
+    } catch (e) {
+      return { ok: false, status: 0, why: (e && e.name === "TimeoutError") ? "TIMEOUT" : "ERROR" };
+    }
+    if (res.status === 429) {
+      const ra = parseInt(res.headers.get("Retry-After") || "", 10);
+      backoffUntil = Date.now() + (Number.isFinite(ra) ? Math.min(Math.max(ra, 5), 3600) : 300) * 1000;
+      return { ok: false, status: 429, why: "UPSTREAM429" };
+    }
+    if (res.status >= 500) {
+      if (attempt === 0 && Date.now() - t0 < RETRY_FAST_5XX_MS) { stats.retries = (stats.retries || 0) + 1; await new Promise(r => setTimeout(r, 1000)); continue; }
+      return { ok: false, status: res.status, why: "UPSTREAM" + res.status };
+    }
+    const body = await res.text();
+    if (!res.ok) return { ok: false, status: res.status, why: "UPSTREAM" + res.status };
+    return { ok: true, body, fetchedAt: new Date().toISOString() };
+  }
+  return { ok: false, status: 502, why: "ERROR" };
+}
+function noteFailure(keyPath) {
+  const now = Date.now();
+  stats.failures = (stats.failures || 0) + 1;
+  negCache.set(keyPath, now + NEG_SECONDS * 1000);
+  if (negCache.size > 500) negCache.delete(negCache.keys().next().value);
+  failTimes = failTimes.filter(t => now - t < FAIL_WINDOW_MS); failTimes.push(now);
+  if (failTimes.length >= FAIL_TRIP) backoffUntil = Math.max(backoffUntil, now + FAIL_BACKOFF_MS);
+}
+function noteSuccess(keyPath) { negCache.delete(keyPath); failTimes = []; }
+
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    const origin = request.headers.get("Origin");
+    const originOk = !!origin && ALLOWED_ORIGINS.includes(origin);
+    const now = Date.now();
+    if (!stats.started) stats.started = new Date(now).toISOString();
+
+    if (request.method === "OPTIONS") {
+      return originOk ? new Response(null, { status: 204, headers: corsHeaders(origin) }) : new Response(null, { status: 403 });
+    }
+    if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405, origin);
+
+    if (url.pathname === "/health" || url.pathname === "/health/") {
+      return json({ ok: true, service: "nzgrocery-proxy", upstream: UPSTREAM, allowedOrigins: ALLOWED_ORIGINS,
+        version: "1.6", cacheFreshSeconds: FRESH_SECONDS, historyFreshSeconds: HISTORY_FRESH_SECONDS,
+        historyCallsToday: histDay.day === ymdUTC(now) ? histDay.count : 0, historyDailyCap: historyCap(env), kvCacheBound: !!(env && env.NZG_KV), memCacheEntries: memCache.size, backoffActive: now < backoffUntil, recentFailures: failTimes.length, inflight: inflight.size, keyConfigured: !!(env && env.BASKT_API_KEY),
+        instance: stats, time: new Date(now).toISOString() }, 200, origin);
+    }
+
+    // Browser calls must come from the allowed site.
+    if (!originOk) { stats.rejected++; return json({ error: "origin_not_allowed" }, 403, origin); }
+
+    const rule = RULES[url.pathname];
+    if (!rule) { stats.rejected++; return json({ error: "path_not_allowed" }, 404, origin); }
+    const clean = new URLSearchParams();
+    for (const [k, v] of url.searchParams) {
+      if (!rule[k] || !rule[k](v) || clean.has(k)) { stats.rejected++; return json({ error: "bad_parameter", param: k }, 400, origin); }
+      clean.set(k, v);
+    }
+    for (const r of (REQUIRED[url.pathname] || [])) if (!clean.has(r)) return json({ error: "missing_parameter", param: r }, 400, origin);
+    clean.sort();
+
+    const ip = request.headers.get("CF-Connecting-IP") || "local";
+    let list = clientHits.get(ip); if (!list) { list = []; clientHits.set(ip, list); }
+    if (clientHits.size > 5000) clientHits.clear();
+    if (!allow(list, CLIENT_LIMIT_PER_MIN, now)) { stats.rejected++; return json({ error: "rate_limited", retryAfterSeconds: 60 }, 429, origin, { "Retry-After": "60" }); }
+
+    const qs = clean.toString();
+    const upstreamUrl = UPSTREAM + url.pathname + (qs ? "?" + qs : "");
+    const keyPath = url.pathname + (qs ? "?" + qs : "");
+    const cacheKey = new Request("https://nzgrocery-cache.internal" + keyPath);
+    const kvKey = "v1:" + keyPath;
+    const isHist = url.pathname === HISTORY_PATH;                  // v1.5
+    const useKV = !isHist && env && env.NZG_KV;                     // history never touches KV
+    const freshFor = isHist ? HISTORY_FRESH_SECONDS : FRESH_SECONDS;
+    let hit = memCache.get(keyPath) || null;
+    if (!hit && useKV) {
+      try { const v = await env.NZG_KV.get(kvKey, { type: "json" }); if (v && v.body && v.fetchedAt) hit = v; } catch (e) {}
+    }
+    if (!hit) {
+      try { const c = await caches.default.match(cacheKey); if (c) hit = { fetchedAt: c.headers.get("X-Fetched-At"), body: await c.text() }; } catch (e) {}
+    }
+    const cachedBody = hit ? hit.body : null, cachedAt = hit ? hit.fetchedAt : null;
+    const cachedAge = hit ? (now - Date.parse(cachedAt)) / 1000 : Infinity;
+    if (hit && !memCache.has(keyPath) && cachedAge < STALE_SECONDS) memPut(keyPath, hit);
+    const reply = (body, xcache, fetchedAt, status = 200) => new Response(body, { status, headers: {
+      "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=300",
+      "X-Cache": xcache, "X-Fetched-At": fetchedAt, ...corsHeaders(origin) } });
+
+    if (cachedBody && cachedAge < freshFor) { stats.cacheHits++; return reply(cachedBody, "HIT", cachedAt); }
+
+    const serveStale = (why) => {
+      if (cachedBody && cachedAge < STALE_SECONDS) { stats.staleServed++; return reply(cachedBody, "STALE-" + why, cachedAt); }
+      return null;
+    };
+    // v1.6: the same query is already on its way to Baskt -> wait for that answer (no second call)
+    if (inflight.has(keyPath)) {
+      const r = await inflight.get(keyPath);
+      if (r.ok) return reply(r.body, "MISS-SHARED", r.fetchedAt);
+      return serveStale("ERROR") || failReply(r);
+    }
+    const negUntil = negCache.get(keyPath) || 0;
+    if (now < negUntil) {
+      const ra = Math.max(2, Math.ceil((negUntil - now) / 1000));
+      return serveStale("RECENTFAIL") || json({ error: "upstream_slow", retryAfterSeconds: ra }, 503, origin, { "Retry-After": String(ra) });
+    }
+    if (now < backoffUntil) {
+      return serveStale("BACKOFF") || json({ error: "upstream_busy", retryAfterSeconds: Math.ceil((backoffUntil - now) / 1000) }, 503, origin, { "Retry-After": String(Math.ceil((backoffUntil - now) / 1000)) });
+    }
+    if (!allow(upstreamHits, UPSTREAM_LIMIT_PER_MIN, now)) {
+      return serveStale("LIMIT") || json({ error: "upstream_quota", retryAfterSeconds: 30 }, 503, origin, { "Retry-After": "30" });
+    }
+
+    if (isHist) {                                                   // v1.5: daily cap on Baskt history calls
+      const a = await historyAllowance(env, ctx, now);
+      if (!a.ok) {
+        stats.historyCapped++;
+        const ra = secondsToUtcMidnight(now);
+        return serveStale("DAILYCAP") || json({ error: "daily_cap", retryAfterSeconds: ra }, 503, origin, { "Retry-After": String(ra) });
+      }
+      stats.historyCalls++;
+    }
+    const headers = { "Accept": "application/json", "User-Agent": USER_AGENT };
+    if (env && env.BASKT_API_KEY) headers["x-api-key"] = env.BASKT_API_KEY;
+
+    const p = callUpstream(upstreamUrl, headers).then(r => {
+      if (r.ok) {
+        noteSuccess(keyPath);
+        memPut(keyPath, { body: r.body, fetchedAt: r.fetchedAt });
+        const saves = [];
+        try { saves.push(caches.default.put(cacheKey, new Response(r.body, { headers: {
+          "Content-Type": "application/json", "X-Fetched-At": r.fetchedAt, "Cache-Control": "public, max-age=" + STALE_SECONDS } })).catch(() => {})); } catch (e) {}
+        if (useKV) saves.push(env.NZG_KV.put(kvKey, JSON.stringify({ body: r.body, fetchedAt: r.fetchedAt }), { expirationTtl: STALE_SECONDS }).catch(() => {}));
+        try { ctx.waitUntil(Promise.all(saves)); } catch (e) {}
+      } else if (r.status === 0 || r.status === 429 || r.status >= 500) {
+        noteFailure(keyPath);
+      }
+      return r;
+    }).finally(() => inflight.delete(keyPath));
+    inflight.set(keyPath, p);
+    const r = await p;
+    if (r.ok) return reply(r.body, "MISS", r.fetchedAt);
+    return serveStale(r.why || "ERROR") || failReply(r);
+
+    function failReply(r) {
+      if (r.status === 404) return json({ error: "upstream_status", status: 404 }, 404, origin);
+      if (r.status === 429) return json({ error: "upstream_busy", retryAfterSeconds: 30 }, 503, origin, { "Retry-After": "30" });
+      if (r.status && r.status < 500) return json({ error: "upstream_status", status: r.status }, 502, origin);
+      return json({ error: r.status ? "upstream_status" : "upstream_unreachable", status: r.status || undefined, retryAfterSeconds: 6 }, 502, origin, { "Retry-After": "6" });
+    }
+  },
+};

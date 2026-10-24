@@ -18,7 +18,7 @@ watermelon:[[],"西瓜|スイカ,すいか|수박|merengi"],peach:[[],"桃,水�
 tomato:[[],"番茄,蕃茄,西紅柿,西红柿|トマト|토마토|tōmato"],potato:[[],"薯仔,馬鈴薯,马铃薯,土豆|じゃがいも,ジャガイモ|감자|rīwai,riwai"],
 onion:[[],"洋蔥,洋葱|玉ねぎ,たまねぎ,タマネギ|양파|aniana"],carrot:[[],"紅蘿蔔,胡蘿蔔,胡萝卜,红萝卜|にんじん,人参,ニンジン|당근|kāreti,kareti"],
 broccoli:[[],"西蘭花,西兰花,花椰菜|ブロッコリー|브로콜리|"],lettuce:[[],"生菜|レタス|상추|rētihi,retihi"],
-cabbage:[[],"椰菜,包菜,卷心菜,高麗菜,高丽菜,白菜|キャベツ|양배추|kāpeti,kapeti"],cucumber:[[],"青瓜,黃瓜,黄瓜|きゅうり,キュウリ|오이|kūkama,kukama"],
+cabbage:[[],"椰菜,包菜,卷心菜,高麗菜,高丽菜,洋白菜|キャベツ|양배추|kāpeti,kapeti"],cucumber:[[],"青瓜,黃瓜,黄瓜|きゅうり,キュウリ|오이|kūkama,kukama"],
 mushroom:[[],"蘑菇,菇,冬菇|きのこ,マッシュルーム|버섯|harore"],garlic:[[],"蒜,大蒜,蒜頭|にんにく,ニンニク|마늘|kāriki,kariki"],
 ginger:[[],"薑,姜,生薑,生姜|しょうが,生姜,ショウガ|생강|"],capsicum:[[],"燈籠椒,灯笼椒,甜椒,彩椒|ピーマン,パプリカ|피망,파프리카|"],
 spinach:[[],"菠菜|ほうれん草|시금치|"],pumpkin:[[],"南瓜|かぼちゃ,カボチャ|호박|paukena"],kumara:[[],"番薯,紅薯,红薯,地瓜|さつまいも,サツマイモ|고구마|kūmara"],
@@ -44,6 +44,18 @@ tissue:[[],"紙巾,纸巾|ティッシュ|티슈|"],detergent:[[],"洗衣粉,洗
 shampoo:[[],"洗頭水,洗髮水,洗发水|シャンプー|샴푸|"],toothpaste:[[],"牙膏|歯磨き粉|치약|"],nappies:[[],"尿片,尿布|おむつ|기저귀|"],
 "cat food":[[],"貓糧,猫粮|キャットフード|고양이 사료|"],"dog food":[[],"狗糧,狗粮|ドッグフード|강아지 사료,개 사료|"],
 cider:[[],"西打|サイダー|사이다|"],pie:[[],"批,派|パイ|파이|pai"],
+// v1.6.0: Chinese / Asian greens and other fresh produce (Cantonese first). 白菜 = bok choy in Cantonese (not cabbage);
+// 紹菜 / 黃芽白 / 大白菜 = Chinese cabbage (NZ shops: "Chinese Cabbage (Wong Bok)", wombok).
+"chinese cabbage":[["wong bok"],"紹菜,绍菜,黃芽白,黄芽白,大白菜,津白,天津白,娃娃菜|はくさい,ハクサイ|배추|"],
+"bok choy":[["pak choy","pak choi"],"白菜,小白菜,白菜仔,上海白菜,上海白,青江菜,奶白菜,小棠菜|チンゲン菜,チンゲンサイ|청경채|"],
+"choy sum":[[],"菜心,菜芯|菜心|채심|"],"gai lan":[[],"芥蘭,芥兰,芥蘭菜,芥兰菜,芥藍|カイラン|카이란|"],
+cauliflower:[[],"椰菜花,菜花,花菜|カリフラワー|콜리플라워|kareparāoa"],"red cabbage":[[],"紫椰菜,紅椰菜,红椰菜,紫甘藍,紫甘蓝,紫包菜|紫キャベツ|적양배추|"],
+"iceberg lettuce":[[],"西生菜,球生菜|玉レタス|양상추|"],celery:[[],"西芹,芹菜|セロリ|셀러리|hereri"],
+"spring onion":[[],"蔥,葱,青蔥,青葱,香蔥,香葱,蔥仔|ねぎ,ネギ,長ねぎ|파,대파|"],taro:[[],"芋頭,芋头,芋仔|里芋,タロイモ|토란|taro"],
+"bean sprouts":[[],"芽菜,銀芽,银芽,豆芽|もやし|숙주|"],eggplant:[[],"茄子,矮瓜|なす,ナス|가지|"],
+courgette:[["zucchini"],"翠玉瓜,意大利青瓜,西葫蘆,西葫芦|ズッキーニ|애호박,주키니|kōketi"],watercress:[[],"西洋菜|クレソン|물냉이|wātakirihi"],
+leek:[[],"京蔥,京葱,大蒜葉|リーキ|대파 리크|"],kale:[[],"羽衣甘藍,羽衣甘蓝|ケール|케일|"],asparagus:[[],"蘆筍,芦笋|アスパラガス,アスパラ|아스파라거스|"],
+silverbeet:[[],"莙薘菜,瑞士甜菜|フダンソウ|근대|"],coriander:[[],"芫荽,香菜,芫茜|パクチー|고수|"],chilli:[[],"辣椒|唐辛子|고추|"],
 };
 const TERM=new Map(),EN=new Set(Object.keys(C));
 for(const [en,[x,s]] of Object.entries(C)){s.split('|').forEach((grp,li)=>grp.split(',').filter(Boolean).forEach(t=>{const k=t.toLowerCase();
@@ -69,8 +81,11 @@ let BRANDS=null;function brandSet(){if(BRANDS)return BRANDS;BRANDS=new Map();for
 // Resolve user text (any of 6 languages) -> {words:[english], size, unknown:[...], from, bq (Baskt query), brand, alt:[...]}
 // v1.3.2: every Latin token goes through the SAME norm() as the product text (so &, ' and - never block a match:
 // l&p = l and p, vogel's = vogels, tip-top = tip top); a brand inside the query becomes one phrase word and its own Baskt query.
-function resolve(text,lang){let raw=String(text||'').trim().toLowerCase().replace(/[’‘]/g,"'").replace(/(\d)\s+(l|ml|g|kg|pk)\b/g,'$1$2');if(!raw)return null;
- const out={words:[],size:null,unknown:[],mapped:false,text:raw,bq:null,brand:null,brandQ:null,alt:[],extra:null};
+// v1.6.0: other English / NZ names for the same vegetable (typed as the whole query)
+const EN_ALIAS={wombok:'chinese cabbage',wongbok:'chinese cabbage','napa cabbage':'chinese cabbage','nappa cabbage':'chinese cabbage',bokchoy:'bok choy','bok choi':'bok choy','pak choy':'bok choy','pak choi':'bok choy',
+ 'chinese broccoli':'gai lan','kai lan':'gai lan',scallion:'spring onion',scallions:'spring onion','green onion':'spring onion','green onions':'spring onion',zucchini:'courgette',aubergine:'eggplant',cilantro:'coriander','silver beet':'silverbeet',chili:'chilli'};
+function resolve(text,lang){let raw=String(text||'').trim().toLowerCase().replace(/[’‘]/g,"'").replace(/(\d)\s+(l|ml|g|kg|pk)\b/g,'$1$2');if(!raw)return null;let aliased=false;if(EN_ALIAS[raw]&&lang!=='raw'){raw=EN_ALIAS[raw];aliased=true}
+ const out={words:[],size:null,unknown:[],mapped:aliased,text:raw,bq:null,brand:null,brandQ:null,alt:[],extra:null};
  const whole=TERM.get(raw);
  if(whole&&!(EN.has(raw)&&lang!=='mi')&&!(whole.lang==='mi'&&lang!=='mi'&&/^[a-z ]+$/.test(raw)&&!/[āēīōū]/.test(raw)&&raw.length<4)){out.words=whole.en.split(' ');out.mapped=true;return out}
  const rest=[];for(const tok of raw.split(/\s+/)){const m=tok.match(SIZE_RE);if(m&&!out.size){out.size=(+m[1])+m[2];continue}rest.push(tok)}
@@ -194,6 +209,7 @@ function typeOf(it){const n=' '+norm(it.name)+' ';const cat=norm((it.category||'
  if((has(/\btea\b/)&&!has(/\btea (cake|cakes|towel|towels|loaf|light|lights|cups?)\b/)&&!has(/\b(teaspoon|teaspoons|tea tree)\b/)||c(/\btea\b/)&&!has(/\b(cake|cakes)\b/))&&!has(/\b(soba|noodles?)\b/))return'tea';
  if(has(/\b(coffee|espresso|latte|cappuccino)\b/)&&!has(/\b(cake|cheesecake|slice|chocolate|biscuits?)\b/)||c(/\bcoffee\b/))return'coffee';
  if(has(/\b(pie|pies|cake|cakes|muffins?|crumble|danish|pastry|pastries|pasty|pasties|tart|tarts|strudel|turnover|loaf|bread|scones?|donuts?|doughnuts?|pudding|cheesecake|slice|croissants?|buns?|brioche|bagels?|wraps?|pita)\b/)&&!has(/\b(mix|kit|flavou?red? milk|bars?|granola|muesli|bites|cereal|yoghurt|ice cream|squares)\b/)&&!s(/milk/))return'bakery';
+ if(has(/\bin [a-z ]*(juice|syrup|brine)\b/)&&!has(/\b(drink|smoothie|cordial)\b/))return'pantry'; // v1.6.0: "Chopped Tomatoes in Juice", "Peaches in Syrup" are tins, not drinks
  if(has(/\b(juice|smoothie|cordial|soda|sparkling|kombucha|lemonade|fizz|nectar|cola|drink|drinks|water|beverage|shot|electrolyte|tonic)\b/)&&!has(/\bmilk\b/)||c(/juice|smoothie|soft drinks|cordial|syrups|energy drinks|kombucha|functional|\bwater\b|beverages/)&&!has(/\bmilk\b/))return'drinks';
  if(has(/\bmilk\b/)&&!has(/\b(chocolate|choc|biscuits?|cookies|bar|bars|soap|powder formula|cheese|halloumi|haloumi|scamorza|mozzarella|feta|gouda|cheddar|edam|brie|camembert|ricotta|quark|havarti|parmesan|yoghurt|butter|stout|ale)\b/)&&!s(/cheese|yoghurt/))return'milk';
  if(has(/\b(yoghurts?|yogurts?|cheese|halloumi|haloumi|scamorza|mozzarella|feta|gouda|cheddar|edam|brie|camembert|ricotta|quark|havarti|parmesan|butter|cream|custard|dip|eggs?|kefir|labneh)\b/)||s(/yoghurt|cheese|butter|cream|eggs|dairy/))return'dairy';
@@ -240,13 +256,19 @@ function subGroup(it,brand,type,words,ownType){let w=residualWords(it,brand);con
  return{key,label,organic,mode,last:qi!==-1&&qi===w.length-1}}
 function productKey(it,brand){const w=residualWords(it,brand).filter(x=>!FILL.has(x)).map(singular).sort();return norm(brand)+'|'+w.join(' ')+'|'+sizeOf(it)}
 // Build: items(raw Baskt) -> products (same item merged across chains) -> sub-groups -> type groups
+const PRODUCE=new Set(('apple,banana,orange,mandarin,pear,kiwifruit,grape,strawberry,blueberry,avocado,lemon,mango,pineapple,watermelon,peach,plum,nectarine,cherry,lime,feijoa,'+
+ 'cabbage,broccoli,lettuce,carrot,potato,onion,tomato,capsicum,cucumber,garlic,pumpkin,kumara,mushroom,spinach,ginger,corn,chinese cabbage,bok choy,choy sum,gai lan,'+
+ 'cauliflower,red cabbage,iceberg lettuce,celery,spring onion,taro,bean sprouts,eggplant,courgette,watercress,leek,kale,asparagus,silverbeet,coriander,chilli,beetroot,parsnip,yam').split(','));
 function build(items,prices,words,opts){opts=opts||{};const seen=[];for(const it of items)if((it.chain==='paknsave'||it.chain==='new-world')&&it.brand)seen.push(it.brand);
  const bi=makeBrandIndex(seen);bi.farro=makeBrandIndex(seen,items.filter(it=>it.chain==='countdown'&&it.brand).map(it=>it.brand));const pre=[];const cnt={};
  for(const it of items){const type=typeOf(it);const b=brandOf(it,bi,type);let brand=b.brand,bsrc=b.src;
   if(type==='fruit'||type==='veg'){const a=subGroup(it,brand,type,words,type),z=subGroup(it,'',type,words,type); // Woolworths/Farro: the variety (Envy, Jazz) sits in the brand / at the start of the name
    if(brand&&z.label&&(!a.label||norm(z.label).includes(norm(brand)))){brand='';bsrc='none'}if(bsrc==='unknown')bsrc='none'}
   const probe=subGroup(it,brand,type,words,null);if(probe.last)cnt[type]=(cnt[type]||0)+1;pre.push({it,type,brand,bsrc})}
- const ownType=Object.entries(cnt).sort((a,b)=>b[1]-a[1])[0];const own=ownType?ownType[0]:null;
+ const ownType=Object.entries(cnt).sort((a,b)=>b[1]-a[1])[0];let own=ownType?ownType[0]:null;
+ // v1.6.0: a fresh-produce word (cabbage, potato, 椰菜 …) -> the fresh fruit/veg itself is the product (loose / per-kg items first),
+ // even when sauces, chips or dumplings outnumber it in the names.
+ if(PRODUCE.has(words.join(' '))){const fv=pre.filter(x=>x.type==='fruit'||x.type==='veg');if(fv.length){const nf=fv.filter(x=>x.type==='fruit').length;own=nf*2>fv.length?'fruit':'veg'}}
  const prods=new Map();
  for(const {it,type,brand,bsrc} of pre){const sg=subGroup(it,brand,type,words,own);
   const pk=type+'|'+productKey(it,brand);let p=prods.get(pk);
@@ -255,6 +277,6 @@ function build(items,prices,words,opts){opts=opts||{};const seen=[];for(const it
   if(it.chain==='paknsave'||it.chain==='new-world'){p.name=it.name;if(bsrc==='baskt'&&brand){p.brand=brand;p.brandSrc='baskt'}}
   p.items.push({id:it.id,chain:it.chain,name:it.name,brand:it.brand,size:it.packSize,sku:it.externalSku,gtin:it.gtin||null,category:it.category,subcategory:it.subcategory,prices:prices[it.id]||{}})}
  const out=[...prods.values()];out.ownType=own;return out}
-const api={brandQuery,hayOf,brandHit,popRank,brandSet,POPULAR,MATCH_SYN,C,TERM,resolve,complete,plan,chainQ,matches,singular,plural,typeOf,brandOf,makeBrandIndex,sizeOf,unitNorm,subGroup,productKey,build,TYPES,titleCase,norm,wordForms};
+const api={PRODUCE,brandQuery,hayOf,brandHit,popRank,brandSet,POPULAR,MATCH_SYN,C,TERM,resolve,complete,plan,chainQ,matches,singular,plural,typeOf,brandOf,makeBrandIndex,sizeOf,unitNorm,subGroup,productKey,build,TYPES,titleCase,norm,wordForms};
 if(typeof module!=='undefined')module.exports=api;else root.NZS=api;
 })(typeof window!=='undefined'?window:globalThis);
