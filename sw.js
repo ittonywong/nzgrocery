@@ -1,5 +1,5 @@
 // App-shell cache only. Price API responses are NOT cached here (the Worker caches them).
-const CACHE='nzgrocery-v11'; // v1.6.0 (retry when the price server is slow; photo → food guess; photo/ model files are cached separately in nzgrocery-photo-v1)
+const CACHE='nzgrocery-v12'; // v1.7.0 (uniform search grid + equal store price rows)
 const SHELL=['./','index.html','app.js','i18n.js','search-i18n.js','search.js','manifest.webmanifest','data/stores.json','data/places.json','data/aliases.json','icons/icon-192.png','icons/icon-512.png','icons/maskable-512.png','icons/apple-touch-icon.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE&&!k.startsWith('nzgrocery-photo-')).map(k=>caches.delete(k)))).then(()=>self.clients.claim()))});

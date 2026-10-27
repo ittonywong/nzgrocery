@@ -47,10 +47,11 @@ input.q{flex:1 1 12rem;min-height:44px;border:1px solid #767676;border-radius:10
 .dist{float:right;font-weight:bold;color:var(--g2);margin-left:.5rem}
 table{width:100%;border-collapse:collapse}td,th{padding:.45rem .3rem;border-top:1px solid #e6e6e6;text-align:left;vertical-align:top}
 .price{font-weight:bold;font-size:1.1rem;white-space:nowrap}.best{background:#e8f5e9}
-/* v1.3.3: only the cheapest price is red (card price, the cheapest store row, group 'from' price, cheapest list total, suggestion price) */
-.cheap,.pl.best .price,tr.best .price,#sug .sp{color:#b00020}.cheap{font-weight:bold}
-.pl{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.2rem .6rem;padding:.5rem 0;border-top:1px solid #e6e6e6}
-.pl .who{flex:1 1 14rem}.pl .amt{text-align:right;flex:0 0 auto}
+/* v1.3.3: cheapest price is red. v1.7.0: store rows are equal size — no .pl.best green block */
+.cheap,tr.best .price,#sug .sp{color:#b00020}.cheap{font-weight:bold}
+.pl{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:.35rem .6rem;padding:.6rem .15rem;border-top:1px solid #e6e6e6;min-height:13.5rem;background:transparent}
+.pl .who{flex:1 1 12rem;min-width:0}.pl .amt{text-align:right;flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;gap:.15rem;min-width:4.5rem}
+.pl .amt .badge{margin:0 0 .1rem}.pl .addr{margin-top:.15rem;line-height:1.3;min-height:2.6em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.pl .dist{white-space:nowrap}.pl .rec{min-height:1.2em}
 .pl a{display:inline-flex;align-items:center;min-height:44px}
 .err{color:#8a1c00;font-weight:bold}
 .qtyb{display:inline-flex;align-items:center;gap:.3rem}.qtyb button{border:1px solid #999;background:#fff;width:44px}
@@ -108,6 +109,23 @@ button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{ou
 .hist{border-top:1px dashed var(--line);margin-top:.5rem;padding-top:.4rem}.hh{margin:0 0 .3rem;font-size:1rem}.hsvg{width:100%;height:auto;max-width:32rem;display:block;background:#fafcfa;border-radius:8px}
 .hleg{list-style:none;padding:0;margin:.4rem 0}.hleg li{margin:.25rem 0}.hleg .sw{vertical-align:middle;margin-right:.3em}.hnone{font-weight:bold;color:var(--warn);margin:.3rem 0}.hnote{margin:.3rem 0 0}.tag.fb{font-size:.8em;border:1px solid var(--warn);color:var(--warn);border-radius:4px;padding:0 .3em}.hobs summary{cursor:pointer;color:var(--accent,#0b5394);min-height:24px}.hobs{margin:.1rem 0 .2rem}
 .prod .pn h3{cursor:pointer}
+
+/* ===== v1.7.0: Grosave-like uniform product grid + equal store price rows ===== */
+.pgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.55rem;margin:.35rem 0 .5rem}
+@media (min-width:640px){.pgrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (min-width:900px){.pgrid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.gcard{display:flex;flex-direction:column;margin:0;padding:.55rem .5rem .6rem;min-height:11.5rem;cursor:pointer;transition:box-shadow .15s,border-color .15s}
+.gcard:hover,.gcard:focus-visible{border-color:var(--g);box-shadow:0 2px 10px rgba(27,94,32,.18)}
+.gcard .gthumb{display:flex;align-items:center;justify-content:center;height:4.2rem;margin-bottom:.35rem}
+.gcard .gthumb .thumb{flex:0 0 auto}.gcard .gthumb .thumb.photo{width:64px;height:64px;flex:0 0 64px}
+.gcard .gn{margin:0;font-size:.92rem;line-height:1.25;font-weight:700;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.4em}
+.gcard .gsz{min-height:1.15em;margin:.15rem 0}.gcard .gp{margin-top:auto;padding-top:.2rem}
+.gcard .gav{margin-top:.15rem;font-size:.78rem}
+.prod.detail{margin-top:.4rem}.prod.detail .offers{margin-top:.2rem}
+.oh{font-size:.95rem;margin:.55rem 0 .15rem;color:#1b3a1d}
+body.has-results[data-tab=search] #locPanel,body.has-detail[data-tab=search] #locPanel{display:none} /* results/detail: dedicated search view */
+body.has-detail #cats,body.has-detail #sortRow{display:none}
+body.has-results[data-tab=search] #camPanel{display:none}
 </style></head><body>
 <header><div class="hd"><h1><span data-tr="title">NZ Supermarket Price Check</span></h1>
 <div class="tools"><label class="langw"><span aria-hidden="true">🌐</span><span id="langCode" aria-hidden="true">EN</span><span aria-hidden="true">▾</span><select id="lang" aria-label="Language"></select></label>
@@ -144,7 +162,7 @@ button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{ou
   <p class="mut small" data-tr="sHint" style="margin:.3rem 0 0"></p></form>
  <div class="panel cam" id="camPanel"><div class="row"><button type="button" class="sec" id="camBtn" data-tr="camBtn"></button><button type="button" class="sec" id="galBtn" data-tr="camGal"></button><input type="file" id="camIn" accept="image/*" capture="environment" hidden><input type="file" id="galIn" accept="image/*" hidden></div><p class="mut small" data-tr="camNote" style="margin:.3rem 0 0"></p><div id="camBox" role="status" aria-live="polite"></div></div>
  <div class="chips cats" id="cats" role="group"></div>
- <div class="row" style="margin:.3rem 0"><span data-tr="sortBy">排序</span><div class="seg" role="group"><button id="sortP" aria-pressed="true" data-tr="sortPrice"></button><button id="sortU" aria-pressed="false" data-tr="sortUnit"></button></div></div>
+ <div class="row" id="sortRow" style="margin:.3rem 0"><span data-tr="sortBy">排序</span><div class="seg" role="group"><button id="sortP" aria-pressed="true" data-tr="sortPrice"></button><button id="sortU" aria-pressed="false" data-tr="sortUnit"></button></div></div>
  <p class="mut small" data-tr="cnNote"></p>
  <div id="sSt" role="status" class="small"></div><div id="results"></div><div id="moreWrap"></div>
 </section>
@@ -158,5 +176,5 @@ button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{ou
 <footer><p><b data-tr="notOfficial"></b>. <span data-tr="bAttr">價錢</span>: <a href="https://www.baskt.nz/" target="_blank" rel="noopener">Baskt</a> (<a href="https://www.baskt.nz/developers" target="_blank" rel="noopener">API</a>). <span data-tr="osmAttr">超市位置</span>: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>, ODbL · Baskt locations. <span data-tr="imgAttr">Product photos</span>: <a href="https://world.openfoodfacts.org/" target="_blank" rel="noopener">Open Food Facts</a> contributors, <a href="https://world.openfoodfacts.org/terms-of-use" target="_blank" rel="noopener">CC BY-SA</a>; <span data-tr="imgIdx">barcode index</span>: <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener">Open Food Facts database, ODbL</a>. <span data-tr="imgNote"></span></p>
 <p data-tr="personal"></p><p class="small" id="ver"></p></footer>
 <div id="toast" role="status" aria-live="polite"></div>
-<script src="i18n.js"></script><script src="search-i18n.js"></script><script src="search.js"></script><script src="app.js"></script>
+<script src="i18n.js?v=1.7.0"></script><script src="search-i18n.js?v=1.7.0"></script><script src="search.js?v=1.7.0"></script><script src="app.js?v=1.7.0"></script>
 </body></html>

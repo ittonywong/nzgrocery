@@ -154,3 +154,13 @@ camBtn:"📷 사진으로 식품 찾기",camGal:"🖼 사진 선택",camNote:"�
 camLoading:"인식 도구 준비 중… {p}%",camThinking:"인식 중…",camGuess:"사진 속 식품은:",camFix:"눌러서 가격 비교, 아니면 위에 직접 입력하세요",camTime:"{s}초",
 camErr:"인식하지 못했습니다(연결 불안정 또는 오래된 기기). 직접 검색할 수 있습니다.",camUnsure:"확실하지 않습니다. 확인 후 선택하세요."}};
 for(const l in Y)Object.assign(I18N[l]||(I18N[l]={}),Y[l])})();
+
+// v1.7.0: product detail store-price section label
+(function(){const X={
+"zh-Hant":{storePrices:"各超市價錢"},
+"zh-Hans":{storePrices:"各超市价格"},
+"en":{storePrices:"Store prices"},
+"ja":{storePrices:"店舗ごとの価格"},
+"mi":{storePrices:"Ngā utu ā-toa"},
+"ko":{storePrices:"매장별 가격"}};
+for(const k in X)Object.assign(I18N[k],X[k]);})();

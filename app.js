@@ -1,7 +1,7 @@
 'use strict';
 // ===== config =====
 const PROXY="https://nzgrocery-proxy.ytonywong.workers.dev";
-const VERSION="1.6.0 (2026-10-24)";
+const VERSION="1.7.0 (2026-10-26)";
 const CHAIN_NAME={"paknsave":"PAK'nSAVE","new-world":"New World","countdown":"Woolworths","farro":"Farro","other":""};
 const SEARCH_CHAINS=["paknsave","new-world","countdown","farro"];
 const $=s=>document.querySelector(s);
@@ -60,8 +60,8 @@ function applyLang(){document.documentElement.lang=LANG;langSel.value=LANG;$('#l
 langSel.onchange=()=>{LANG=langSel.value;localStorage.setItem('nzgLang',LANG);applyLang()};
 // ===== tabs =====
 const TABS=['stores','search','list'];
-function showTab(t){for(const x of TABS){$('#tb-'+x).setAttribute('aria-selected',x===t);$('#v-'+x).hidden=x!==t}if(t==='list')renderList()}
-TABS.forEach(t=>$('#tb-'+t).onclick=()=>showTab(t));
+function showTab(t){for(const x of TABS){$('#tb-'+x).setAttribute('aria-selected',x===t);$('#v-'+x).hidden=x!==t}document.body.dataset.tab=t;if(t==='list')renderList()}
+TABS.forEach(t=>$('#tb-'+t).onclick=()=>showTab(t));document.body.dataset.tab='stores';
 // ===== location =====
 // Round 3: two ways to set the centre — (a) GPS, only after the user agrees in our own consent box AND the browser prompt;
 // (b) manual City > Area > Place (official LINZ suburb/locality centroids from data/places.json). Everything is computed on
@@ -344,15 +344,25 @@ function fillPhotos(box,G){const els=[...box.querySelectorAll('.thumb[data-gt]')
  Promise.all([...need].map(k=>loadShard(k).p)).then(()=>{for(const e of els){if(!e.isConnected)continue;const p=G.prods.find(x=>x.key===e.dataset.gt);if(!p)continue;
   const f=photoOf(p);if(f)e.outerHTML=photoHtml(f,p.name);else e.removeAttribute('data-gt')}})}
 document.addEventListener('error',e=>{const t=e.target;if(t&&t.tagName==='IMG'&&t.parentNode&&t.parentNode.classList&&t.parentNode.classList.contains('photo')){const c=t.closest('.card');t.parentNode.outerHTML=icon(c?c.dataset.type:'other')}},true); // photo missing -> icon
-function prodCard(p,open,words){const show=open?p.of:p.of.slice(0,1);const id=esc(p.key);
- return '<article class="card prod" data-key="'+id+'" data-type="'+p.type+'" data-cents="'+p.best.c+'">'+
+// v1.7.0: search results = uniform equal-size grid cards (no embedded store prices). Tap opens product detail.
+function prodCard(p,words){const id=esc(p.key);const sz=sizeTxt(p);const org=p.sub&&p.sub.organic?T('organic'):'';
+ return '<article class="card prod gcard" data-key="'+id+'" data-type="'+p.type+'" data-cents="'+p.best.c+'" role="button" tabindex="0" aria-label="'+esc(p.name)+'">'+
+ '<div class="gthumb">'+thumbHtml(p)+'</div>'+
+ '<h3 class="gn">'+hl(p.name,words)+'</h3>'+
+ '<div class="mut small gsz">'+esc([sz,org].filter(Boolean).join(' · ')||'\u00a0')+'</div>'+
+ '<div class="gp"><div class="price cheap">'+money(p.best.c)+'</div>'+(p.unit?'<div class="unitp">'+esc(unitTxt(p.unit))+'</div>':'')+'</div>'+
+ '<div class="mut small gav">'+esc(T('availAt',{n:p.of.length}))+'</div></article>'}
+function detailCard(p,words){const id=esc(p.key);
+ return '<article class="card prod detail" data-key="'+id+'" data-type="'+p.type+'" data-cents="'+p.best.c+'">'+
  '<div class="ph">'+thumbHtml(p)+'<div class="pn"><div class="bl">'+brandHtml(p)+'</div><h3>'+hl(p.name,words)+'</h3>'+
  '<div class="mut small">'+esc([sizeTxt(p),p.sub.organic?T('organic'):''].filter(Boolean).join(' · '))+(sizeTxt(p)?' · ':'')+esc(T('chainsCarry',{list:chainsOf(p)}))+'</div></div>'+
  '<div class="pb"><div class="price cheap">'+money(p.best.c)+'</div>'+(p.unit?'<div class="unitp">'+esc(unitTxt(p.unit))+'</div>':'')+'</div></div>'+
- show.map((o,j)=>offerHtml(o.item,o,j===0)).join('')+
- '<div class="row acts">'+(p.of.length>1?'<button class="sec more" data-key="'+id+'" aria-expanded="'+(!!open)+'">'+esc(open?T('showLess'):T('showAll',{n:p.of.length}))+'</button>':'')+
+ '<div class="row acts">'+
  '<button class="sec hbtn" data-key="'+id+'" aria-expanded="'+histOpen.has(p.key)+'"><span aria-hidden="true">📈 </span>'+esc(T('histBtn'))+'</button>'+
- '<button class="pri add" data-key="'+id+'">'+esc(T('add'))+'</button></div>'+(histOpen.has(p.key)?'<div class="histBox" data-key="'+id+'"></div>':'')+'<div class="chooserBox"></div></article>'}
+ '<button class="pri add" data-key="'+id+'">'+esc(T('add'))+'</button></div>'+
+ (histOpen.has(p.key)?'<div class="histBox" data-key="'+id+'"></div>':'')+'<div class="chooserBox"></div>'+
+ '<h4 class="oh">'+esc(T('storePrices'))+'</h4>'+
+ '<div class="offers">'+p.of.map((o,j)=>offerHtml(o.item,o,j===0)).join('')+'</div></article>'}
 // ===== v1.5.0: price history, last 3 months, straight from Baskt's history (via the Worker), per store =====
 // Tapping a product asks the Worker for /api/v1/items/history for the item at each of the (up to) 6 nearest stores.
 // Every point is a date on which Baskt observed that price; lines are steps between observations and stop at the
@@ -425,10 +435,14 @@ function toggleHist(b,G){const k=b.dataset.key,art=b.closest('.prod');if(!art)re
 let view={run:null,type:'all',cmp:null,shown:{}};const openCards=new Set();
 function bindCards(box,G){fillPhotos(box,G);fillHist(box,G);
  box.querySelectorAll('.hbtn').forEach(b=>b.onclick=()=>toggleHist(b,G));
- box.querySelectorAll('.prod .pn h3').forEach(h=>h.onclick=()=>{const b=h.closest('.prod').querySelector('.hbtn');if(b)toggleHist(b,G)}); // v1.4.0: tap the product name = open/close its price history
-box.querySelectorAll('.more').forEach(b=>b.onclick=()=>{const k=b.dataset.key;openCards.has(k)?openCards.delete(k):openCards.add(k);renderResults()});
+ box.querySelectorAll('.prod.detail .pn h3').forEach(h=>h.onclick=()=>{const b=h.closest('.prod').querySelector('.hbtn');if(b)toggleHist(b,G)});
+ // v1.7.0: tap a grid card → product detail (equal store price rows)
+ const openDetail=k=>{view.cmp=k;renderResults();const el=$('#cmp');if(el)el.scrollIntoView({block:'start'})};
+ box.querySelectorAll('.prod.gcard').forEach(art=>{
+  art.onclick=e=>{if(e.target.closest('a,button'))return;openDetail(art.dataset.key)};
+  art.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openDetail(art.dataset.key)}}});
  box.querySelectorAll('.add').forEach(b=>b.onclick=()=>{const p=G.prods.find(x=>x.key===b.dataset.key);if(p)addFlow(p,b)});
- [...box.querySelectorAll('[data-cat]'),...document.querySelectorAll('#cats [data-cat]')].forEach(b=>b.onclick=()=>{view.type=b.dataset.cat;renderResults();$('#cats').scrollIntoView({block:'nearest'})});
+ [...box.querySelectorAll('[data-cat]'),...document.querySelectorAll('#cats [data-cat]')].forEach(b=>b.onclick=()=>{view.type=b.dataset.cat;view.cmp=null;renderResults();$('#cats').scrollIntoView({block:'nearest'})});
  box.querySelectorAll('[data-bexp]').forEach(b=>b.onclick=()=>{view.shown[b.dataset.bexp]=1;renderResults()});
  box.querySelectorAll('[data-bmore]').forEach(b=>b.onclick=()=>{view.shown._b=(view.shown._b||10)+10;renderResults()});
  box.querySelectorAll('[data-showmore]').forEach(b=>b.onclick=()=>{view.shown[b.dataset.showmore]=(view.shown[b.dataset.showmore]||40)+40;renderResults()})}
@@ -441,7 +455,8 @@ function statusLine(run,G){const pl=run.pl;let h='';
  if(here&&(G.prods.length||run.finished))h+='<div class="mut small scope">'+esc(T('cmpScope',{place:mode==='gps'?T('youHere'):sel.place,r:radius,n:priceSlots().length}))+'</div>';
  return h}
 function renderResults(){const box=$('#results'),run=view.run;$('#cats').innerHTML='';
- if(!run){box.innerHTML='';$('#sSt').innerHTML=view.msg||'';$('#moreWrap').innerHTML='';return}
+ document.body.classList.toggle('has-results',!!(run&&run.q));document.body.classList.toggle('has-detail',!!view.cmp);
+ if(!run){box.innerHTML='';$('#sSt').innerHTML=view.msg||'';$('#moreWrap').innerHTML='';syncHash();return}
  if(!here){$('#sSt').innerHTML='<span class="err">'+esc(T('needLoc'))+'</span>';box.innerHTML='';return}
  const G=groupRun(run);const words=run.pl.words;$('#sSt').innerHTML=statusLine(run,G);const rb=$('#retryBtn');if(rb)rb.onclick=()=>retrySearch(run);
  if(view.cmp){renderCmp(G,words);return}
@@ -454,26 +469,29 @@ function renderResults(){const box=$('#results'),run=view.run;$('#cats').innerHT
  const nb=view.shown._b||10;h+='<p class="mut small bcount">'+esc(T('bCount',{n:bl.length}))+'</p>';
  for(const g of bl.slice(0,nb))h+=brandGrpHtml(g,words,view.shown[g.key]?g.prods.length:3);
  if(bl.length>nb)h+='<button class="sec wide" data-bmore="1">'+esc(T('bMore',{n:bl.length-nb}))+'</button>';
- box.innerHTML=h;bindCards(box,G);
+ box.innerHTML=h;bindCards(box,G);syncHash();
  const more=run.finished&&Object.keys(run.more).length;$('#moreWrap').innerHTML=more?'<button class="sec" id="moreBtn">'+esc(T('sMore'))+'</button>':'';
  const mb=$('#moreBtn');if(mb)mb.onclick=()=>loadMore(run)}
 const fromHtml=first=>esc(T('fromP',{p:'\u0001'})).replace('\u0001','<span class="cheap">'+esc(sortMode==='unit'&&first.bestU?unitTxt(first.bestU.u):money(first.best.c))+'</span>');
 function brandGrpHtml(g,words,limit){const first=g.prods[0];const lbl=g.other?T('bOther'):g.label;
  return '<section class="bgrp" data-brand="'+esc(g.key)+'"><h3 class="bh">'+esc(lbl)+(g.hit?' <span class="bmatch">'+esc(T('bMatch'))+'</span>':'')+' <span class="mut small">· '+esc(T('nKinds',{n:g.prods.length}))+' · '+fromHtml(first)+'</span></h3>'+
- g.prods.slice(0,limit).map(p=>prodCard(p,openCards.has(p.key),words)).join('')+
+ '<div class="pgrid">'+g.prods.slice(0,limit).map(p=>prodCard(p,words)).join('')+'</div>'+
  (g.prods.length>limit?'<button class="sec wide" data-bexp="'+esc(g.key)+'">'+esc(T('bShowAll',{n:g.prods.length,b:lbl}))+' ›</button>':'')+'</section>'}
 function groupHtml(g,words,limit){const first=g.prods[0];
  const lbl=g.other?T('otherKinds'):(g.label||T('plain'));
  return '<div class="grp" data-sub="'+esc(g.key)+'"><h3 class="gh">'+esc(lbl)+' <span class="mut small">· '+esc(T('nKinds',{n:g.prods.length}))+' · '+fromHtml(first)+'</span></h3>'+
- g.prods.slice(0,limit).map(p=>prodCard(p,openCards.has(p.key),words)).join('')+'</div>'}
+ '<div class="pgrid">'+g.prods.slice(0,limit).map(p=>prodCard(p,words)).join('')+'</div></div>'}
 function renderCmp(G,words){const p=G.prods.find(x=>x.key===view.cmp);const box=$('#results');$('#moreWrap').innerHTML='';
  if(!p){box.innerHTML='<p class="panel">'+esc(T('cmpNone'))+'</p><button class="sec" id="cmpBack">'+esc(T('back'))+'</button>';$('#cmpBack').onclick=closeCmp;return}
- const t=G.types.find(x=>x.type===p.type);const g=t.groups.find(x=>x.prods.includes(p));
- const others=(g&&!g.other?g.prods:t.prods).filter(x=>x!==p).slice(0,12);
+ const t=G.types.find(x=>x.type===p.type);const g=t&&t.groups.find(x=>x.prods.includes(p));
+ const others=(g&&!g.other?g.prods:t?t.prods:[]).filter(x=>x!==p).slice(0,12);
  box.innerHTML='<section id="cmp" aria-labelledby="cmpH"><button class="sec" id="cmpBack">'+esc(T('back'))+'</button><h2 id="cmpH" class="th">'+esc(T('cmpTitle'))+' · '+esc(typeName(p.type))+(g&&g.label&&!g.other?' · '+esc(g.label):'')+'</h2>'+
-  prodCard(p,true,words)+(others.length?'<h3 class="gh">'+esc(T('sameGroup'))+'</h3>'+others.map(x=>prodCard(x,openCards.has(x.key),words)).join(''):'')+'</section>';
- $('#cmpBack').onclick=closeCmp;bindCards(box,G);$('#cmpBack').focus({preventScroll:true})}
-function closeCmp(){view.cmp=null;renderResults()}
+  detailCard(p,words)+(others.length?'<h3 class="gh">'+esc(T('sameGroup'))+'</h3><div class="pgrid">'+others.map(x=>prodCard(x,words)).join('')+'</div>':'')+'</section>';
+ $('#cmpBack').onclick=closeCmp;bindCards(box,G);syncHash();$('#cmpBack').focus({preventScroll:true})}
+function syncHash(){try{if(view.cmp&&view.run)history.replaceState(null,'','#/product?q='+encodeURIComponent(view.run.q||'')+'&key='+encodeURIComponent(view.cmp));
+ else if(view.run)history.replaceState(null,'','#/search?q='+encodeURIComponent(view.run.q||''));
+ else if(location.hash.startsWith('#/search')||location.hash.startsWith('#/product'))history.replaceState(null,'',location.pathname+location.search)}catch(e){}}
+function closeCmp(){view.cmp=null;renderResults();syncHash()}
 // v1.6.0: "Try again" re-asks only the requests that failed (the others are answered from the phone cache)
 function retrySearch(run){const q=run.q;if(RUNS.get(run.key)===run)RUNS.delete(run.key);const r2=openRun(q,{type:view.type});if(r2)r2.q=q}
 function openRun(text,opts){opts=opts||{};const r=NZS.resolve(text,LANG);const pl=NZS.plan(r);
@@ -536,13 +554,13 @@ qIn.addEventListener('keydown',e=>{if(sug.hidden){if(e.key==='ArrowDown'&&qIn.va
  else if(e.key==='Escape'){e.preventDefault();sugClose()}else if(e.key==='Enter'&&sugActive>=0){e.preventDefault();chooseSug(sugActive)}});
 qIn.addEventListener('focus',()=>{if(qIn.value.trim())onType(true)});
 document.addEventListener('click',e=>{if(!e.target.closest('#sForm'))sugClose()});
-function doSearch(){const q=qIn.value.trim();if(!q)return;sugClose();openCards.clear();
+function doSearch(){const q=qIn.value.trim();if(!q)return;sugClose();openCards.clear();view.cmp=null;showTab('search');
  // reuse the suggestion run when it is for this text (0 extra requests)
- const run=openRun(sugRun&&sugRun.q===q?sugRun.pl.phrase+(sugRun.pl.size?' '+sugRun.pl.size:''):q);if(run){run.q=q}}
+ const run=openRun(sugRun&&sugRun.q===q?sugRun.pl.phrase+(sugRun.pl.size?' '+sugRun.pl.size:''):q);if(run){run.q=q;syncHash()}}
 $('#sForm').onsubmit=e=>{e.preventDefault();doSearch()}; // Enter on the phone keyboard = view all
 // ===== v1.6.0 photo → food guess: recognised on the phone (photo/photo.js, loaded only after 📷 is tapped) =====
 let photoP=null,camUrl=null;const camBox=$('#camBox');
-function photoLib(){if(!photoP)photoP=new Promise((ok,no)=>{if(window.NZGPhoto)return ok(window.NZGPhoto);const s=document.createElement('script');s.src='photo/photo.js?v=1.6.0';
+function photoLib(){if(!photoP)photoP=new Promise((ok,no)=>{if(window.NZGPhoto)return ok(window.NZGPhoto);const s=document.createElement('script');s.src='photo/photo.js?v=1.7.0';
  s.onload=()=>window.NZGPhoto?ok(window.NZGPhoto):no(new Error('photo'));s.onerror=()=>no(new Error('photo.js'));document.head.appendChild(s)});photoP.catch(()=>{photoP=null});return photoP}
 function camProg(p){const e=$('#camSt');if(e)e.textContent=p>=1?T('camThinking'):T('camLoading',{p:Math.round(p*100)});const b=$('#camBar');if(b)b.value=p}
 function camPick(inp){inp.value='';inp.click();photoLib().then(P=>P.init(camProg)).catch(()=>{})} // start the one-time download while the camera is open
@@ -561,12 +579,14 @@ $('#camIn').onchange=e=>camFile(e.target.files[0]);$('#galIn').onchange=e=>camFi
 $('#sortP').onclick=()=>{sortMode='price';$('#sortP').setAttribute('aria-pressed',true);$('#sortU').setAttribute('aria-pressed',false);renderResults()};
 $('#sortU').onclick=()=>{sortMode='unit';$('#sortU').setAttribute('aria-pressed',true);$('#sortP').setAttribute('aria-pressed',false);renderResults()};
 window.NZG_TEST={NET,RUNS,RC,INFL,histSeries,HSH,HB,histTargets,get view(){return view},groupRun,priceSlots,get sel(){return sel},get PLACES(){return PLACES},pqSearch,get ALIAS(){return ALIAS}};
-function offerHtml(p,o,best){const s=o.slot;
- return '<div class="pl'+(best?' best':'')+'" data-loc="'+esc(s.loc)+'" data-cents="'+o.c+'"><div class="who"><b>'+esc(s.label)+'</b> <span class="mut small">'+kmS(s.d)+'</span>'+
+function offerHtml(p,o,best){const s=o.slot,addr=(s.store&&s.store.addr)||'';
+ // v1.7.0: equal-size rows — cheapest gets a small badge + red price only (no bigger green block)
+ return '<div class="pl" data-loc="'+esc(s.loc)+'" data-cents="'+o.c+'"><div class="who"><b>'+esc(s.label)+'</b> <span class="mut small dist">'+kmS(s.d)+'</span>'+
+ (addr?'<div class="mut small addr">'+esc(addr)+'</div>':'')+
  (s.zone?'<div class="mut small">'+esc(T('nearestBranch',{store:s.store.name,d:kmS(s.d)}))+'</div>':'')+
  '<div class="mut small rec" data-obs="'+esc(o.obs)+'">'+esc(T('rec',{t:fmtT(o.obs)}))+' ('+esc(ago(o.obs))+')</div>'+
  '<a href="'+esc(productUrl(p))+'" target="_blank" rel="noopener" class="vlink">'+esc(T('verify'))+' ↗</a>'+(s.zone?'':' <span class="mut small">('+esc(T('verifyStore'))+')</span>')+'</div>'+
- '<div class="amt">'+(best?'<div class="badge">'+esc(T('cheapest'))+'</div>':'')+'<div class="price">'+money(o.c)+'</div>'+(o.u&&o.um?'<div class="mut small">'+esc(T('unit',{p:money(o.u),u:o.um}))+'</div>':'')+'</div></div>'} // v1.3.3: no 'Special' label (own use); only the cheapest price is red
+ '<div class="amt">'+(best?'<span class="badge">'+esc(T('cheapest'))+'</span>':'')+'<div class="price'+(best?' cheap':'')+'">'+money(o.c)+'</div>'+(o.u&&o.um?'<div class="mut small">'+esc(T('unit',{p:money(o.u),u:o.um}))+'</div>':'')+'</div></div>'}
 // ===== shopping list =====
 const slim=p=>({id:p.id,chain:p.chain,name:p.name,brand:p.brand,size:p.size,sku:p.sku,prices:p.prices,savedAt:new Date().toISOString()});
 // PAK'nSAVE and New World (both Foodstuffs) share product codes: add the twin automatically
